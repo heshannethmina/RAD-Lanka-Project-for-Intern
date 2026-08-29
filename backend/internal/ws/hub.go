@@ -21,57 +21,87 @@ type inbound struct {
 // no mutex in this file, and why adding one would defeat the design:
 // the state is not shared, it is owned.
 type Hub struct {
+	// roomID is set once at construction and never written again.
+	roomID string
+
 	// Owned by Run. Do not touch from any other goroutine.
 	clients  map[*Client]struct{}
 	document string
+	// presenceDirty means the client set changed and the room has not been
+	// told yet. Set it instead of broadcasting inline: a drop can happen
+	// deep inside a broadcast's range loop, and re-entering broadcast from
+	// there would iterate the map while it is being mutated.
+	presenceDirty bool
 
 	register   chan *Client
 	unregister chan *Client
 	inbound    chan inbound
+	// quit is closed by the registry when the last client has left.
+	quit chan struct{}
 }
 
-// NewHub builds a hub with an empty document. Call Run in its own
+// NewHub builds a hub for roomID with an empty document. Call Run in its own
 // goroutine before registering anyone.
-func NewHub() *Hub {
+func NewHub(roomID string) *Hub {
 	return &Hub{
+		roomID:     roomID,
 		clients:    make(map[*Client]struct{}),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		inbound:    make(chan inbound),
+		quit:       make(chan struct{}),
 	}
 }
+
+// Stop shuts the hub's goroutine down. Only the registry calls it, exactly
+// once, after the room is empty and unreachable.
+func (h *Hub) Stop() { close(h.quit) }
 
 // Register hands a new client to the hub goroutine and blocks until it is
 // accepted, so the caller knows the client is in the room before it starts
 // pumping.
 func (h *Hub) Register(c *Client) { h.register <- c }
 
-// Run owns the room. It never returns.
+// Run owns the room. It returns when the registry stops the hub.
 func (h *Hub) Run() {
 	for {
 		select {
+		case <-h.quit:
+			return
+
 		case c := <-h.register:
 			h.clients[c] = struct{}{}
 			// A late joiner needs the current document before anything else,
 			// otherwise it would sit on an empty buffer until someone types.
 			h.sendTo(c, Message{Type: TypeSnapshot, Text: h.document})
-			h.broadcastPresence()
-			log.Printf("ws: client joined (%d in room)", len(h.clients))
+			h.presenceDirty = true
+			log.Printf("ws: %s: client joined (%d in room)", h.roomID, len(h.clients))
 
 		case c := <-h.unregister:
-			if _, ok := h.clients[c]; !ok {
-				// Already dropped for being slow; its read pump is just
-				// catching up. Nothing to do, and importantly do not close
-				// send twice.
-				continue
+			// It may already be gone, dropped for being slow while its read
+			// pump was still catching up. Then there is nothing to do, and
+			// importantly its send channel must not be closed twice.
+			if _, ok := h.clients[c]; ok {
+				h.drop(c)
+				log.Printf("ws: %s: client left (%d in room)", h.roomID, len(h.clients))
 			}
-			h.drop(c)
-			h.broadcastPresence()
-			log.Printf("ws: client left (%d in room)", len(h.clients))
 
 		case in := <-h.inbound:
 			h.apply(in)
 		}
+
+		h.flushPresence()
+	}
+}
+
+// flushPresence tells the room its size, if anything changed. It loops
+// because sending presence can itself drop a client and change the count
+// again; that terminates because every extra pass removes at least one
+// client.
+func (h *Hub) flushPresence() {
+	for h.presenceDirty {
+		h.presenceDirty = false
+		h.broadcast(Message{Type: TypePresence, Clients: len(h.clients)}, nil)
 	}
 }
 
@@ -118,10 +148,6 @@ func (h *Hub) sendTo(c *Client, msg Message) {
 	h.deliver(c, data)
 }
 
-func (h *Hub) broadcastPresence() {
-	h.broadcast(Message{Type: TypePresence, Clients: len(h.clients)}, nil)
-}
-
 // deliver must never block: the hub is the whole room's single thread of
 // control, so one wedged client cannot be allowed to freeze everyone else.
 // A client whose buffer is full is dropped instead.
@@ -129,7 +155,7 @@ func (h *Hub) deliver(c *Client, data []byte) {
 	select {
 	case c.send <- data:
 	default:
-		log.Print("ws: dropping client that fell behind")
+		log.Printf("ws: %s: dropping client that fell behind", h.roomID)
 		h.drop(c)
 	}
 }
@@ -140,4 +166,5 @@ func (h *Hub) deliver(c *Client, data []byte) {
 func (h *Hub) drop(c *Client) {
 	delete(h.clients, c)
 	close(c.send)
+	h.presenceDirty = true
 }

@@ -1,50 +1,44 @@
 import Link from "next/link";
+import Logo from "./Logo";
+
+const LINKS = [
+  { href: "#home", label: "Home" },
+  { href: "#product", label: "Product" },
+  { href: "#pricing", label: "Pricing" },
+  { href: "#faq", label: "FAQ" },
+];
 
 export default function Nav() {
   return (
     <header className="sticky top-0 z-50 w-full">
       <div className="mx-auto max-w-6xl px-6">
-        <div className="mt-4 flex items-center justify-between rounded-2xl glass px-5 py-3">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-[var(--accent-a)] to-[var(--accent-b)] font-mono text-xs font-bold text-[#0B0E14]">
-              P
-            </span>
-            <span className="font-display text-[15px] font-semibold tracking-tight text-ink">
-              Panelist
-            </span>
+        <div className="glass mt-4 flex items-center justify-between rounded-2xl px-4 py-2.5">
+          <Link href="/" className="flex items-center">
+            <Logo />
           </Link>
 
-          <nav className="hidden items-center gap-7 md:flex">
-            <a
-              href="#product"
-              className="text-sm text-ink-dim transition hover:text-ink"
-            >
-              Product
-            </a>
-            <a
-              href="#pricing"
-              className="text-sm text-ink-dim transition hover:text-ink"
-            >
-              Pricing
-            </a>
-            <a
-              href="#faq"
-              className="text-sm text-ink-dim transition hover:text-ink"
-            >
-              FAQ
-            </a>
+          <nav className="hidden items-center gap-8 md:flex">
+            {LINKS.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="text-[13px] text-ink-dim transition hover:text-ink"
+              >
+                {link.label}
+              </a>
+            ))}
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <Link
               href="/room/demo"
-              className="hidden text-sm text-ink-dim transition hover:text-ink sm:block"
+              className="hidden text-[13px] text-ink-dim transition hover:text-ink sm:block"
             >
               Sign in
             </Link>
             <Link
               href="/room/demo"
-              className="rounded-lg bg-gradient-to-br from-[var(--accent-a)] to-[var(--accent-b)] px-4 py-2 text-sm font-semibold text-[#0B0E14] transition hover:brightness-110"
+              className="btn-accent rounded-xl px-4 py-2 text-[13px] font-semibold"
             >
               Try live demo
             </Link>

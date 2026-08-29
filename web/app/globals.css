@@ -1,23 +1,35 @@
 @import "tailwindcss";
 
 :root {
-  /* Base */
-  --bg: #0B0E14;
-  --bg-elevated: #10141D;
-  --ink: #E7EAF3;
-  --ink-dim: #8A93A6;
-  --ink-faint: #565F73;
+  /* Base — deep navy with a violet cast */
+  --bg: #070A18;
+  --bg-deep: #04060F;
+  --bg-elevated: #0E1330;
+  --ink: #EEF0FB;
+  --ink-dim: #99A1C6;
+  --ink-faint: #656D94;
 
-  /* Accent gradient: cyan -> violet */
-  --accent-a: #5EEAD4;
-  --accent-b: #818CF8;
-  --accent-solid: #7DD3C0;
+  /* Accent: blue -> violet */
+  --accent-a: #5B8CFF;
+  --accent-b: #8B5CF6;
+  --accent-ring: rgba(91, 140, 255, 0.55);
 
   /* Glass surfaces */
-  --glass-fill: rgba(255, 255, 255, 0.04);
-  --glass-fill-hover: rgba(255, 255, 255, 0.07);
+  --glass-fill: rgba(255, 255, 255, 0.045);
+  --glass-fill-hover: rgba(255, 255, 255, 0.08);
   --glass-border: rgba(255, 255, 255, 0.09);
-  --glass-border-bright: rgba(255, 255, 255, 0.16);
+  --glass-border-bright: rgba(255, 255, 255, 0.15);
+
+  /* Recessed panels: editor body, output box, FAQ rows */
+  --inset-fill: rgba(5, 8, 22, 0.6);
+  --inset-border: rgba(255, 255, 255, 0.06);
+
+  /* Syntax */
+  --code-key: #A78BFA;
+  --code-fn: #60A5FA;
+  --code-str: #7DD3A8;
+  --code-num: #F0A868;
+  --code-punct: #8891B8;
 
   /* Fonts */
   --font-display: var(--font-display);
@@ -53,26 +65,27 @@ body {
   position: relative;
 }
 
-/* Ambient background glow — fixed, sits behind all content */
+/* Ambient glow — a violet bloom top-centre over navy, per the design */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(680px 420px at 12% -8%, rgba(94, 234, 212, 0.10), transparent 60%),
-    radial-gradient(720px 480px at 92% 18%, rgba(129, 140, 248, 0.11), transparent 60%),
-    radial-gradient(900px 600px at 50% 110%, rgba(94, 234, 212, 0.05), transparent 60%);
+    radial-gradient(900px 520px at 50% -12%, rgba(124, 92, 246, 0.26), transparent 62%),
+    radial-gradient(700px 460px at 8% 8%, rgba(59, 96, 226, 0.20), transparent 60%),
+    radial-gradient(760px 520px at 96% 26%, rgba(139, 92, 246, 0.16), transparent 60%),
+    radial-gradient(1000px 640px at 50% 108%, rgba(76, 108, 235, 0.12), transparent 62%);
   pointer-events: none;
 }
 
-/* Faint grain texture for depth, avoids flat gradients looking sterile */
+/* Faint grain, so the large gradients do not band */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
-  opacity: 0.035;
+  opacity: 0.03;
   pointer-events: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
@@ -85,7 +98,7 @@ body::after {
   font-family: var(--font-mono), ui-monospace, monospace;
 }
 
-/* Glass panel utility */
+/* Glass panel: the floating cards the whole layout is built from */
 .glass {
   background: var(--glass-fill);
   backdrop-filter: blur(20px);
@@ -100,6 +113,26 @@ body::after {
   border: 1px solid var(--glass-border-bright);
 }
 
+/* Recessed panel: code body, output box, FAQ row */
+.inset {
+  background: var(--inset-fill);
+  border: 1px solid var(--inset-border);
+}
+
+/* Primary action: blue -> violet, with a matching bloom */
+.btn-accent {
+  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  color: #fff;
+  box-shadow:
+    0 10px 30px -10px rgba(91, 140, 255, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.btn-accent:hover {
+  filter: brightness(1.08);
+}
+
 .text-gradient {
   background: linear-gradient(100deg, var(--accent-a), var(--accent-b));
   -webkit-background-clip: text;
@@ -107,7 +140,13 @@ body::after {
   color: transparent;
 }
 
-/* Respect reduced motion */
+/* Small uppercase-ish section chip: "Features", "Pricing" */
+.chip {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-border);
+  color: var(--ink-dim);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -116,11 +155,10 @@ body::after {
   }
 }
 
-/* Visible keyboard focus */
 :focus-visible {
   outline: 2px solid var(--accent-a);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 @keyframes blink-cursor {
@@ -129,12 +167,7 @@ body::after {
   100% { opacity: 1; }
 }
 
-@keyframes type-line {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
 @keyframes float-slow {
-  0%, 100% { transform: translateY(0px) rotate(-2deg); }
-  50% { transform: translateY(-14px) rotate(-1deg); }
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
 }

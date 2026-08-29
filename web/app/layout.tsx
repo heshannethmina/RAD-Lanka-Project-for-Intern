@@ -21,9 +21,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Panelist — Technical interviews that feel like pairing",
+  title: "Interview Platform — Seamless collaborative coding interviews",
   description:
-    "A fast, affordable technical interview platform. Live collaborative code editor, real execution, no bloat.",
+    "Conduct real-time technical assessments with an integrated, sandboxed code editor. Test candidates on their actual coding skills, not just theory.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -32,7 +32,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${spaceGrotesk.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#0B0E14] text-[#E7EAF3]">
+      <body className="min-h-full flex flex-col bg-[#070A18] text-[#EEF0FB]">
         {children}
       </body>
     </html>

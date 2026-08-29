@@ -20,17 +20,17 @@ func main() {
 		addr = ":8080"
 	}
 
-	// Roadmap step 1: exactly one room, no auth. Step 2 replaces this single
-	// hub with a map of room ID -> hub, one goroutine each.
-	hub := ws.NewHub()
-	go hub.Run()
+	// One hub goroutine per room, created on first join and shut down when
+	// the last client leaves. Still no auth: anyone with a room ID is in.
+	rooms := ws.NewRegistry()
+	go rooms.Run()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.Handle("GET /ws", ws.Handler(hub))
+	mux.Handle("GET /ws/{roomID}", ws.Handler(rooms))
 
 	srv := &http.Server{
 		Addr:    addr,

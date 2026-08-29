@@ -3,52 +3,47 @@ import EditorMockup from "./EditorMockup";
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden px-6 pb-20 pt-16 sm:pt-24">
-      <div className="mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[1.05fr_1fr] lg:gap-10">
+    <section id="home" className="relative px-6 pb-24 pt-14 sm:pt-20">
+      <div className="mx-auto grid max-w-6xl items-center gap-14 lg:grid-cols-[0.95fr_1.05fr] lg:gap-12">
         <div>
-          <div className="glass mb-6 inline-flex items-center gap-2 rounded-full px-3 py-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#5EEAD4]" />
-            <span className="font-mono text-[11px] tracking-wide text-ink-dim">
-              now in early access
-            </span>
-          </div>
+          <span className="chip inline-flex items-center rounded-full px-3 py-1 text-[11px] tracking-wide">
+            early access
+          </span>
 
-          <h1 className="font-display text-[2.6rem] font-semibold leading-[1.08] tracking-tight sm:text-6xl">
-            Interviews that feel
-            <br />
-            like <span className="text-gradient">pairing,</span>
-            <br />
-            not proctoring.
+          <h1 className="mt-6 font-display text-[2.5rem] font-semibold leading-[1.12] tracking-tight sm:text-[3.25rem]">
+            Seamless Collaborative Coding Interviews. Build Your Team with
+            Confidence.
           </h1>
 
-          <p className="mt-6 max-w-md text-[17px] leading-relaxed text-ink-dim">
-            A live collaborative editor with real code execution — built for
-            teams who want signal, not enterprise bloat. Set up an interview
-            in under a minute.
+          <p className="mt-6 max-w-lg text-[15px] leading-relaxed text-ink-dim">
+            Conduct real-time technical assessments with our integrated,
+            sandboxed code editor. Test candidates on their actual coding
+            skills, not just theory.
           </p>
 
-          <div className="mt-9 flex flex-wrap items-center gap-4">
+          <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               href="/room/demo"
-              className="rounded-xl bg-gradient-to-br from-[var(--accent-a)] to-[var(--accent-b)] px-6 py-3.5 text-sm font-semibold text-[#0B0E14] shadow-[0_8px_30px_-8px_rgba(94,234,212,0.45)] transition hover:brightness-110"
+              className="btn-accent rounded-xl px-5 py-3 text-sm font-semibold"
             >
-              Start a free interview →
+              Start a free interview
             </Link>
             <a
               href="#pricing"
-              className="glass rounded-xl px-6 py-3.5 text-sm font-semibold text-ink transition hover:bg-white/[0.07]"
+              className="glass rounded-xl px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white/[0.08]"
             >
               See pricing
             </a>
           </div>
 
-          <p className="mt-6 font-mono text-xs text-ink-faint">
-            No credit card · candidate joins with a link · Go, Python, JS
-          </p>
+          <p className="mt-5 text-xs text-ink-faint">No credit card required</p>
         </div>
 
-        <div className="lg:pl-4">
+        <div className="lg:pl-2">
           <EditorMockup />
+          <p className="mt-4 text-center text-xs text-ink-faint">
+            live collaborative code editor
+          </p>
         </div>
       </div>
     </section>
