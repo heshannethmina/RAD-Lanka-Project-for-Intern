@@ -1,90 +1,149 @@
 import Link from "next/link";
+import Reveal from "./Reveal";
 
-const plans = [
+type Plan = {
+  name: string;
+  amount: string;
+  period: string;
+  features: string[];
+  cta: string;
+  href: string;
+  recommended?: boolean;
+};
+
+const PLANS: Plan[] = [
   {
     name: "Starter",
-    price: "$0",
-    period: "/forever",
-    desc: "5 interviews/month, 1 seat, core languages, 7-day history",
+    amount: "$0",
+    period: "forever",
+    features: [
+      "5 interviews per month",
+      "1 seat",
+      "Core languages",
+      "7-day history",
+    ],
     cta: "Start free",
-    highlighted: false,
+    href: "/room/demo",
   },
   {
     name: "Team",
-    price: "$39",
-    period: "/interviewer/month",
-    desc: "Unlimited interviews, up to 10 seats, all languages, question bank, 90-day history",
+    amount: "$39",
+    period: "per interviewer / month",
+    features: [
+      "Unlimited interviews",
+      "Up to 10 seats",
+      "All languages",
+      "Question bank",
+      "90-day history",
+    ],
     cta: "Start trial",
-    highlighted: true,
+    href: "/room/demo",
+    recommended: true,
   },
   {
     name: "Campus",
-    price: "Custom pricing",
-    period: "",
-    desc: "Unlimited interviews and seats, bulk candidate links, priority support",
+    amount: "Custom",
+    period: "pricing",
+    features: [
+      "Unlimited interviews and seats",
+      "Bulk candidate links",
+      "Priority support",
+    ],
     cta: "Talk to us",
-    highlighted: false,
+    href: "/room/demo",
   },
 ];
 
+/** Milliseconds between one card starting and the next, left to right. */
+const STAGGER = 80;
+
+function Check() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="mt-[3px] h-4 w-4 shrink-0 text-ink-muted"
+      aria-hidden="true"
+    >
+      <path
+        d="M3.5 8.5l3 3 6-6.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function Pricing() {
   return (
-    <section id="pricing" className="px-6 py-20">
-      <div className="mx-auto max-w-5xl text-center">
-        <span className="chip inline-flex items-center rounded-full px-3 py-1 text-[11px] tracking-wide">
-          Pricing
-        </span>
-        <h2 className="mt-4 font-display text-3xl font-semibold tracking-tight sm:text-[2.5rem]">
-          Select your Plan
-        </h2>
-        <p className="mt-3 text-sm text-ink-dim">
-          All plans include essential collaborative features
-        </p>
+    <section id="pricing" className="px-6 py-24 sm:py-28">
+      <div className="mx-auto max-w-6xl">
+        <Reveal>
+          <span className="eyebrow">Pricing</span>
+          <h2 className="mt-4 font-display text-[32px] font-semibold leading-[1.12] tracking-[-0.025em] text-ink sm:text-[40px]">
+            Simple pricing.
+          </h2>
+          <p className="mt-4 max-w-xl text-[16px] leading-relaxed text-ink-body">
+            Every plan includes the shared editor and real, sandboxed
+            execution.
+          </p>
+        </Reveal>
 
-        <div className="mt-10 grid gap-5 md:grid-cols-3">
-          {plans.map((plan) => (
-            <div
-              key={plan.name}
-              className={`flex flex-col rounded-2xl p-7 text-center ${
-                plan.highlighted
-                  ? "glass-bright ring-accent lg:-translate-y-2"
-                  : "glass glass-hover lift"
-              }`}
-            >
-              <h3 className="font-display text-lg font-semibold tracking-tight text-ink">
-                {plan.name}
-              </h3>
-
-              <p className="mt-5">
-                <span
-                  className={
-                    plan.period
-                      ? "font-display text-[2.6rem] font-semibold leading-none tracking-tight text-ink"
-                      : "font-display text-[1.6rem] font-semibold leading-none tracking-tight text-ink"
-                  }
-                >
-                  {plan.price}
-                </span>
-                {plan.period && (
-                  <span className="ml-1 text-[12px] text-ink-faint">
-                    {plan.period}
-                  </span>
-                )}
-              </p>
-
-              <p className="mt-5 flex-1 text-[13px] leading-relaxed text-ink-dim">
-                {plan.desc}
-              </p>
-
-              <Link
-                href="/room/demo"
-                className={`mt-7 rounded-xl px-5 py-2.5 text-sm font-semibold ${
-                  plan.highlighted ? "btn-accent" : "glass glass-hover text-ink"
+        <div className="mt-12 grid gap-5 md:grid-cols-3">
+          {PLANS.map((plan, i) => (
+            <Reveal key={plan.name} delay={i * STAGGER}>
+              <article
+                className={`card flex h-full flex-col rounded-xl p-7 ${
+                  plan.recommended ? "card--pick" : ""
                 }`}
               >
-                {plan.cta}
-              </Link>
-            </div>
+                {/* The slot is rendered on every card, empty or not, so the
+                    three plan names sit on the same line. */}
+                <div className="flex h-6 items-center">
+                  {plan.recommended && (
+                    <span className="rounded-full bg-[var(--accent-wash)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent">
+                      Recommended
+                    </span>
+                  )}
+                </div>
+
+                <h3 className="mt-4 font-display text-[17px] font-semibold tracking-[-0.01em] text-ink">
+                  {plan.name}
+                </h3>
+
+                <p className="mt-3 flex items-baseline gap-1.5">
+                  <span className="font-display text-[38px] font-semibold leading-none tracking-[-0.03em] text-ink">
+                    {plan.amount}
+                  </span>
+                  <span className="text-[13px] text-ink-muted">
+                    {plan.period}
+                  </span>
+                </p>
+
+                <ul className="mt-7 flex-1 space-y-2.5">
+                  {plan.features.map((feature) => (
+                    <li
+                      key={feature}
+                      className="flex gap-2.5 text-[14px] leading-relaxed text-ink-body"
+                    >
+                      <Check />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+
+                <Link
+                  href={plan.href}
+                  className={`mt-8 h-11 w-full text-[14px] ${
+                    plan.recommended ? "btn-primary" : "btn-secondary"
+                  }`}
+                >
+                  {plan.cta}
+                </Link>
+              </article>
+            </Reveal>
           ))}
         </div>
       </div>

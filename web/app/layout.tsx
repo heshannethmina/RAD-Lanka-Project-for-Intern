@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import Splash from "@/components/Splash";
 import "./globals.css";
 
 // One typeface for the whole interface. Hierarchy comes from size, weight and
@@ -28,7 +29,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${inter.variable} ${jetbrainsMono.variable} h-full`}
     >
+      <head>
+        {/* Without JS there is nothing to dismiss the splash or to trigger a
+            reveal, so neither may be allowed to hide content. */}
+        <noscript>
+          <style>{`.splash{display:none!important}[data-reveal]{opacity:1!important;transform:none!important}`}</style>
+        </noscript>
+      </head>
       <body className="min-h-full flex flex-col bg-white text-ink-body">
+        <Splash />
         {children}
       </body>
     </html>

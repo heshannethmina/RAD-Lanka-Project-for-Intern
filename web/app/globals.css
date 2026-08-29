@@ -46,6 +46,16 @@
   --nav-filter-rest: blur(0px) saturate(100%);
   --nav-filter-scrolled: blur(12px) saturate(180%);
 
+  /* Syntax, for the editor mockup. A muted light-theme palette in the spirit
+     of GitHub's — enough to parse the code at a glance, well short of a
+     rainbow. */
+  --code-plain: #1f2328;
+  --code-key: #cf222e;
+  --code-fn: #8250df;
+  --code-str: #0a3069;
+  --code-num: #0550ae;
+  --code-comment: #6e7781;
+
   /* One typeface, sized and tracked for hierarchy. */
   --font-display: var(--font-sans);
   --font-body: var(--font-sans);
@@ -193,15 +203,210 @@ body {
 }
 
 /* ------------------------------------------------------------------------
+   Section furniture
+   ------------------------------------------------------------------------ */
+
+/* Section label. The accent earns its place here because there is exactly
+   one per section — the sparing use the whole palette depends on. */
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Card label. Muted rather than accent: four of these in one grid would turn
+   the accent into decoration. */
+.card-tag {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* A flat card. The hairline is the whole definition — no shadow, no gradient
+   border, nothing that reads as a glow. */
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  transition: border-color 200ms ease, background-color 200ms ease;
+}
+
+.card:hover {
+  border-color: var(--line-strong);
+  background: var(--bg-subtle);
+}
+
+/* The recommended plan. An accent hairline plus an inset ring of the same
+   colour — visually a 2px border, but drawn inside the box so the card's
+   geometry stays identical to its neighbours and the three stay aligned.
+   Deliberately a border and a label, not a tinted or glowing card. */
+.card--pick {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.card--pick:hover {
+  border-color: var(--accent);
+  background: #fff;
+}
+
+/* ------------------------------------------------------------------------
+   Accordion
+
+   Height is animated with grid-template-rows 0fr -> 1fr rather than by
+   measuring scrollHeight in JS. The row resolves to the content's natural
+   height, so the panel animates to `auto` without anyone having to know what
+   `auto` is, and it stays correct if the answer reflows.
+   ------------------------------------------------------------------------ */
+.faq-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.faq-panel[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+
+/* The clipping row. Without overflow hidden the content ignores the 0fr row
+   and simply overflows, which loses the whole effect. */
+.faq-panel > div {
+  overflow: hidden;
+}
+
+.faq-panel__inner {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.faq-panel[data-open="true"] .faq-panel__inner {
+  opacity: 1;
+  /* Slightly behind the height, so the text arrives into open space. */
+  transition-delay: 90ms;
+}
+
+/* ------------------------------------------------------------------------
+   Motion
+
+   One gesture, used everywhere: fade in while sliding up a little. The easing
+   is a soft decelerate, so groups settle rather than arrive.
+   ------------------------------------------------------------------------ */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-reveal][data-shown="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------------
+   Loader
+
+   The logo taken apart and set moving: the cycle turns inside the brackets,
+   and the brackets ease outward and back. Same period for both, so the two
+   gestures read as one thing breathing rather than two loops competing.
+   ------------------------------------------------------------------------ */
+@keyframes syncr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes syncr-chev-out-left {
+  0%,
+  100% {
+    transform: translateX(0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateX(-16%);
+    opacity: 1;
+  }
+}
+
+@keyframes syncr-chev-out-right {
+  0%,
+  100% {
+    transform: translateX(0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateX(16%);
+    opacity: 1;
+  }
+}
+
+.syncr-loader {
+  display: inline-flex;
+  align-items: center;
+}
+
+.syncr-loader__cycle {
+  animation: syncr-spin 1.15s linear infinite;
+}
+
+.syncr-loader__chev--left {
+  animation: syncr-chev-out-left 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.syncr-loader__chev--right {
+  animation: syncr-chev-out-right 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* Full-page cover, used for the first paint and for route transitions. */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  transition: opacity 420ms ease, visibility 420ms ease;
+}
+
+.splash[data-done="true"] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------------
+   Panel
+
+   A raised surface: hairline border and a single soft shadow. Deliberately
+   one shadow — stacked shadows are what make a card look like it is glowing.
+   ------------------------------------------------------------------------ */
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 32px -14px rgba(16, 24, 40, 0.16);
+}
+
+/* ------------------------------------------------------------------------
    Surfaces
 
-   The sections below the nav still carry class names from the previous dark
-   build. Rather than leave them styled for a dark page, each name now maps
-   to its light, flat equivalent, so the whole site reads in the new language
-   while the individual sections are redesigned.
+   The landing page no longer uses these; only the interview room still
+   carries class names from the previous dark build. Each maps to its light,
+   flat equivalent so the room is not left styled for a dark page. All of it
+   goes when the room is redesigned.
    ------------------------------------------------------------------------ */
-.glass,
-.glass-bright {
+.glass {
   background: #fff;
   border: 1px solid var(--line);
   box-shadow: none;
@@ -216,12 +421,7 @@ body {
   background: var(--bg-subtle);
 }
 
-.lift:hover {
-  transform: none;
-}
-
-.inset,
-.panel-deep {
+.inset {
   background: var(--bg-subtle);
   border: 1px solid var(--line);
   box-shadow: none;
@@ -242,15 +442,6 @@ body {
   background: var(--accent-hover);
 }
 
-.chip {
-  background: var(--bg-subtle);
-  border: 1px solid var(--line);
-  color: var(--ink-muted);
-}
-
-.ring-accent {
-  box-shadow: 0 0 0 1px var(--accent);
-}
 
 .tab-active {
   background: #fff;
@@ -258,9 +449,6 @@ body {
   border-bottom-color: transparent;
 }
 
-.text-gradient {
-  color: var(--accent);
-}
 
 /* ------------------------------------------------------------------------
    Base

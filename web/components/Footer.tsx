@@ -1,28 +1,39 @@
 import Link from "next/link";
 import Logo from "./Logo";
+import Reveal from "./Reveal";
 
 export default function Footer() {
   return (
-    <footer className="px-6 pb-10">
-      <div className="mx-auto max-w-5xl">
-        <div className="panel-deep flex flex-col items-center gap-4 rounded-2xl px-8 py-14 text-center">
-          <h2 className="max-w-lg font-display text-3xl font-semibold leading-tight tracking-tight sm:text-[2.25rem]">
-            Ready to start your first collaborative interview?
-          </h2>
-          <p className="text-sm text-ink-dim">Try it now for free</p>
-          <Link
-            href="/room/demo"
-            className="btn-accent mt-2 rounded-xl px-6 py-3 text-sm font-semibold"
-          >
-            Start a free interview
-          </Link>
-        </div>
+    <footer>
+      {/* Closing CTA. A full-width tint rather than a card — the band itself
+          is the separation, so nothing needs a shadow to lift off the page. */}
+      <section className="bg-bg-subtle px-6 py-24 sm:py-28">
+        <Reveal>
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="font-display text-[32px] font-semibold leading-[1.12] tracking-[-0.025em] text-ink sm:text-[40px]">
+              Ready to run your first interview?
+            </h2>
+            <p className="mt-4 text-[16px] leading-relaxed text-ink-body">
+              Free to start, and nothing for candidates to install.
+            </p>
+            <Link
+              href="/room/demo"
+              className="btn-primary mt-8 h-12 px-6 text-[15px]"
+            >
+              Start a free interview
+            </Link>
+          </div>
+        </Reveal>
+      </section>
 
-        <div className="mt-8 flex flex-col items-center justify-between gap-4 text-xs text-ink-faint sm:flex-row">
-          <Logo />
-          <p>
-            © {new Date().getFullYear()} SyncR. All rights
-            reserved.
+      {/* Utility bar */}
+      <div className="border-t border-line px-6">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 py-8 sm:flex-row">
+          <Link href="/" className="rounded-sm">
+            <Logo className="h-[22px] w-auto" />
+          </Link>
+          <p className="text-[13px] text-ink-muted">
+            © {new Date().getFullYear()} SyncR. All rights reserved.
           </p>
         </div>
       </div>

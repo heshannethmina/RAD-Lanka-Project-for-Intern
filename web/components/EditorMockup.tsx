@@ -1,100 +1,109 @@
+import type { ReactNode } from "react";
+
 /**
- * Decorative editor for the hero. Code is rendered as coloured bars rather
- * than fake source: it reads as code at a glance without inviting anyone to
- * squint at nonsense.
+ * A still of the product for the hero: window chrome, one file open, real
+ * Python, and a Run button.
+ *
+ * The code is the same problem the demo room ships with, so the marketing
+ * image and the actual product agree with each other.
  */
 
-type Bar = { w: string; c: string };
+/* Token helpers — small enough to read inline, which keeps the code sample
+   below looking like code rather than like markup. */
+const K = ({ children }: { children: ReactNode }) => (
+  <span style={{ color: "var(--code-key)" }}>{children}</span>
+);
+const F = ({ children }: { children: ReactNode }) => (
+  <span style={{ color: "var(--code-fn)" }}>{children}</span>
+);
+const N = ({ children }: { children: ReactNode }) => (
+  <span style={{ color: "var(--code-num)" }}>{children}</span>
+);
 
-const LINES: { indent: number; bars: Bar[] }[] = [
-  { indent: 0, bars: [{ w: "14%", c: "bg-[var(--code-key)]" }, { w: "26%", c: "bg-[var(--code-fn)]" }, { w: "12%", c: "bg-white/25" }] },
-  { indent: 1, bars: [{ w: "18%", c: "bg-white/30" }, { w: "10%", c: "bg-[var(--code-num)]" }] },
-  { indent: 1, bars: [{ w: "12%", c: "bg-[var(--code-key)]" }, { w: "22%", c: "bg-white/25" }, { w: "16%", c: "bg-[var(--code-str)]" }] },
-  { indent: 2, bars: [{ w: "20%", c: "bg-white/25" }, { w: "14%", c: "bg-[var(--code-num)]" }] },
-  { indent: 2, bars: [{ w: "26%", c: "bg-[var(--code-fn)]" }, { w: "10%", c: "bg-white/20" }] },
-  { indent: 1, bars: [{ w: "8%", c: "bg-white/20" }] },
-  { indent: 1, bars: [{ w: "16%", c: "bg-[var(--code-key)]" }, { w: "30%", c: "bg-white/25" }] },
-  { indent: 0, bars: [{ w: "6%", c: "bg-white/20" }] },
-  { indent: 0, bars: [{ w: "22%", c: "bg-[var(--code-fn)]" }, { w: "18%", c: "bg-[var(--code-str)]" }] },
+const LINES: ReactNode[] = [
+  <>
+    <K>def</K> <F>max_element</F>(values):
+  </>,
+  <>
+    {"    "}
+    <K>if</K> <K>not</K> values:
+  </>,
+  <>
+    {"        "}
+    <K>return</K> <K>None</K>
+  </>,
+  <>{""}</>,
+  <>
+    {"    "}largest = values[<N>0</N>]
+  </>,
+  <>
+    {"    "}
+    <K>for</K> value <K>in</K> values[<N>1</N>:]:
+  </>,
+  <>
+    {"        "}
+    <K>if</K> value &gt; largest:
+  </>,
+  <>{"            largest = value"}</>,
+  <>
+    {"    "}
+    <K>return</K> largest
+  </>,
+  <>{""}</>,
+  <>
+    <F>print</F>(<F>max_element</F>([<N>10</N>, <N>5</N>, <N>22</N>, <N>11</N>
+    ]))
+  </>,
 ];
 
-function Cursor({
-  label,
-  color,
-  className,
-}: {
-  label: string;
-  color: string;
-  className: string;
-}) {
+function PlayIcon() {
   return (
-    <div className={`absolute z-20 flex items-start ${className}`}>
-      <span className="h-4 w-[2px] rounded-full" style={{ background: color }} />
-      <span
-        className="ml-1 rounded-md px-1.5 py-0.5 text-[9px] font-semibold text-white shadow-lg"
-        style={{ background: color }}
-      >
-        {label}
-      </span>
-    </div>
+    <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
+      <path d="M3.5 2.5v7l6-3.5z" fill="currentColor" />
+    </svg>
   );
 }
 
 export default function EditorMockup() {
   return (
-    <div className="relative">
-      <div
-        className="glass-bright relative overflow-hidden rounded-2xl"
-        style={{ animation: "float-slow 8s ease-in-out infinite" }}
-      >
-        {/* window chrome */}
-        <div className="flex items-center gap-3 border-b border-white/[0.07] bg-white/[0.03] px-4 py-2.5">
-          <div className="flex gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#FF6058]" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#FFBD2E]" />
-            <span className="h-2.5 w-2.5 rounded-full bg-[#28CA42]" />
-          </div>
-          <span className="inset rounded-md px-2 py-0.5 font-mono text-[10px] text-ink-dim">
-            main.py
-          </span>
+    <div className="panel overflow-hidden rounded-xl">
+      {/* Window chrome */}
+      <div className="flex items-center gap-3 border-b border-line bg-bg-subtle px-4 py-3">
+        <div className="flex gap-1.5" aria-hidden="true">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#F0645C]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#F5BD4F]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#5FC454]" />
         </div>
 
-        {/* Code body. Frosted rather than near-black: in the hero this panel
-            sits over the violet bloom and should read as a pane of glass
-            catching the light, not as a dark editor cut out of the page. */}
-        <div className="relative bg-gradient-to-b from-white/[0.15] to-white/[0.05] px-4 py-5">
-          {LINES.map((line, i) => (
-            <div key={i} className="flex items-center gap-3 py-[5px]">
-              <span className="w-4 shrink-0 text-right font-mono text-[9px] text-ink-faint">
-                {i + 1}
-              </span>
-              <div
-                className="flex flex-1 items-center gap-1.5"
-                style={{ paddingLeft: `${line.indent * 14}px` }}
-              >
-                {line.bars.map((bar, j) => (
-                  <span
-                    key={j}
-                    className={`h-[7px] rounded-full ${bar.c}`}
-                    style={{ width: bar.w }}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+        <span className="ml-1 rounded-md border border-line bg-white px-2.5 py-1 font-mono text-[11px] text-ink">
+          main.py
+        </span>
 
-          <Cursor label="Interviewer" color="var(--accent-a)" className="left-[38%] top-[52px]" />
-          <Cursor label="Candidate" color="var(--accent-b)" className="left-[26%] top-[128px]" />
-        </div>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[11px] font-medium text-white">
+          <PlayIcon />
+          Run
+        </span>
       </div>
 
-      {/* floating presence chip */}
-      <div className="glass-bright absolute -right-3 -top-4 z-30 flex items-center gap-2 rounded-full px-3 py-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.45)]">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#34D399] opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-[#34D399]" />
-        </span>
-        <span className="font-mono text-[10px] text-ink-dim">2 in room</span>
+      {/* Code */}
+      <div className="overflow-x-auto bg-white px-4 py-4">
+        <pre className="font-mono text-[12.5px] leading-[1.75] text-[var(--code-plain)]">
+          {LINES.map((line, i) => (
+            <div key={i} className="flex">
+              <span className="mr-4 w-5 shrink-0 select-none text-right text-[var(--code-comment)]">
+                {i + 1}
+              </span>
+              <span className="whitespace-pre">{line}</span>
+            </div>
+          ))}
+        </pre>
+      </div>
+
+      {/* Result of the run above — the point of the product, in one line. */}
+      <div className="flex items-center gap-2 border-t border-line bg-bg-subtle px-4 py-2.5 font-mono text-[11.5px]">
+        <span className="text-ink-muted">output</span>
+        <span className="text-ink">22</span>
+        <span className="ml-auto text-ink-muted">0.04s</span>
       </div>
     </div>
   );

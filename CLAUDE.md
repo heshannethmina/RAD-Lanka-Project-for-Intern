@@ -204,6 +204,11 @@ Utilities in `app/globals.css`:
 | `.nav-link` | nav link with a centre-out underline on hover |
 | `.btn-primary` | flat, solid-accent, pill-shaped primary action |
 | `.btn-secondary` | hairline-outlined action on white |
+| `.eyebrow` | section label; the one accent-coloured item per section |
+| `.card-tag` | card label, muted so a grid of them stays quiet |
+| `.card` | flat card: hairline border, no shadow, no gradient edge |
+| `.card--pick` | the recommended plan: accent hairline plus an inset ring |
+| `.panel` | raised surface: hairline plus a single soft shadow |
 
 Two things here are load-bearing and easy to undo by accident:
 
@@ -223,13 +228,55 @@ supplied artwork from `public/syncr-logo.png` (full lockup) and
 as flat `#005DED` over the alpha channel, which cut them to roughly a third
 of their original weight. They are 256px tall, so they stay sharp at 3x.
 
-**Migration in progress.** The nav is rebuilt. Hero, Features, Pricing, FAQ,
-Footer and the room still carry class names from the previous dark build
-(`.glass`, `.inset`, `.panel-deep`, `.chip`, `.btn-accent`, `.tab-active`,
-`ink-dim`, `ink-faint`). Those names are temporarily remapped in
-`globals.css` to flat light equivalents so the whole site reads in the new
-language while each section awaits its real redesign. Delete the remaps, and
-the aliases, once every section has been rebuilt.
+### Motion and the loader
+
+Two pieces, both driven from CSS so they work without waiting on React.
+
+`components/Reveal.tsx` wraps a group and fades it in while sliding it up as
+it enters the viewport. The observer **disconnects after the first
+intersection** — a reveal that replays on every scroll past becomes a
+distraction. Groups already on screen fire immediately, so the hero reads as
+a load-in. Stagger sibling groups with `delay` (the hero uses 0 for the copy
+and 140ms for the editor).
+
+`components/SyncLoader.tsx` is the logo taken apart and set moving: the cycle
+turns between the two brackets while the brackets ease out and back, both on
+the same 1.15s period so they read as one gesture. The three pieces live in
+`public/syncr-cycle.png`, `syncr-chev-left.png` and `syncr-chev-right.png`.
+Sizes are computed from each piece's aspect ratio in the component rather
+than set in CSS, so `next/image` gets real dimensions and the row cannot
+reflow as the images arrive.
+
+It is used in two places:
+
+- `components/Splash.tsx` — the first-paint cover. It server-renders, so the
+  mark is already turning in the first frame instead of appearing at
+  hydration. Clears on `window.load` with a `MIN_MS` floor so a fast load is
+  a deliberate beat rather than a flicker.
+- `app/loading.tsx` — the same cover for route transitions.
+
+**Anything that can hide content needs a `<noscript>` escape.** The layout
+carries one that disables both the splash and the reveal's hidden state;
+without it, a browser with JS off gets a blank page behind a cover with
+nothing to dismiss it.
+
+**Migration status.** The whole landing page — nav, hero, features, pricing,
+FAQ and the closing CTA — is rebuilt in the light system. Only the interview
+room still carries class names from the previous dark build (`.glass`,
+`.glass-hover`, `.inset`, `.btn-accent`, `.tab-active`, `ink-dim`,
+`ink-faint`), remapped in `globals.css` to flat light equivalents so it is not
+left styled for a dark page. Those remaps and the `--ink-dim` / `--ink-faint`
+aliases all go when the room is redesigned. The classes the landing page had
+stopped using (`.glass-bright`, `.panel-deep`, `.chip`, `.ring-accent`,
+`.text-gradient`, `.lift`) have already been deleted.
+
+The FAQ accordion animates height with `grid-template-rows: 0fr -> 1fr`
+rather than by measuring `scrollHeight`, so it animates to the content's
+natural height without JS knowing what that height is. Two things it depends
+on: the inner wrapper needs `overflow: hidden` or the content simply ignores
+the `0fr` row, and a collapsed panel needs `inert` — the content stays in the
+DOM for the animation, so it has to be pulled out of the a11y tree and tab
+order explicitly.
 
 Monaco still runs the dark `interview-dark` theme registered in
 `beforeMount`. That is now inconsistent with the light page and needs a
