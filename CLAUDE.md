@@ -178,48 +178,62 @@ each other's keystrokes, and Run executes the code for real via Judge0.
 
 ### Design system
 
-The UI follows a supplied mockup: blue (`--accent-a #5B8CFF`) to violet
-(`--accent-b #8B5CF6`) on deep navy (`--bg #070A18`), with a violet bloom
-top-centre. Everything is built from a small set of utilities in
-`app/globals.css`:
+**Product name: SyncR.** The design direction is light, elegant and
+restrained — closer to Google's own product sites than to a typical SaaS
+landing page. The rules, in the order they matter:
+
+- White and near-white surfaces, graphite text, generous whitespace.
+- **One accent**, `--accent #005DED`, used sparingly. It is sampled from the
+  logo, so the mark and the interface are literally the same blue.
+- **Flat surfaces separated by hairlines** (`--line`), not by shadows or
+  glows. Cards get a 1px border, not a card shadow.
+- Hierarchy comes from type — size, weight, tracking — not decoration. One
+  typeface (Inter) throughout, plus JetBrains Mono for code.
+- Motion is a subtle scroll reveal (fade plus a small upward slide). No
+  pulsing, floating, or glowing.
+
+Explicitly avoided, because they read as generic AI-generated design:
+purple-to-blue gradients, backdrop-blur glass panels, neon glow shadows,
+floating badges with ping animations.
+
+Utilities in `app/globals.css`:
 
 | Utility | Used for |
 |---|---|
-| `.glass` | floating cards, bars, panels |
-| `.glass-bright` | the surface that should read as picked or nearest |
-| `.glass-hover` | hover state for interactive glass (see below) |
-| `.lift` | cards that rise on hover; paired with `.glass-hover` |
-| `.inset` | recessed panels: code body, output box, prompt, FAQ rows |
-| `.panel-deep` | the closing CTA, which sits darker than the page |
-| `.btn-accent` | primary action |
-| `.ring-accent` | the selected pricing plan's glow |
-| `.tab-active` | the editor's file tab |
+| `.nav-bar` | the sticky bar; `data-scrolled` drives its settled state |
+| `.nav-link` | nav link with a centre-out underline on hover |
+| `.btn-primary` | flat, solid-accent, pill-shaped primary action |
+| `.btn-secondary` | hairline-outlined action on white |
 
-Three details in there are load-bearing, and all three are easy to undo by
-accident:
+Two things here are load-bearing and easy to undo by accident:
 
 - **`backdrop-filter` values must go through a `var()`.** Given a literal,
   Lightning CSS rewrites the declaration to `-webkit-backdrop-filter` *only*
   and drops the standard property. Chrome does not support the prefixed
-  alias, so the blur silently vanishes and every glass surface flattens into
-  a plain translucent rectangle — which is exactly what the whole design
-  depends on. The `--blur-glass*` variables exist for that reason, not for
-  taste. Check with `getComputedStyle($0).backdropFilter` — `none` means it
-  regressed.
-- **Glass hover cannot be a Tailwind `hover:bg-white/…`.** `.glass` paints
-  its fill with a `background` gradient, and a `background-color` sits behind
-  it, so the hover would be invisible. That is what `.glass-hover` is for.
-- **The edge is a gradient, not a border colour** (`padding-box` fill plus
-  `border-box` border, over `border: 1px solid transparent`). Replacing it
-  with a flat `border-color` loses the lit top-left edge that makes the pane
-  read as glass.
+  alias, so the blur silently does nothing. That is why the nav's frost lives
+  in `--nav-filter-*`. Check with `getComputedStyle($0).backdropFilter` —
+  `none` means it regressed.
+- **The nav declares its blur at rest too** (`blur(0px)`), so the property
+  has something to animate from. Setting it only in the scrolled state makes
+  the frost snap on instead of easing in.
 
-Product name is **Interview Platform**; `components/Logo.tsx` is the single
-source for the mark.
+`components/Logo.tsx` is the single source for the mark. It serves the
+supplied artwork from `public/syncr-logo.png` (full lockup) and
+`public/syncr-mark.png` (mark only) — both cropped to the ink and re-encoded
+as flat `#005DED` over the alpha channel, which cut them to roughly a third
+of their original weight. They are 256px tall, so they stay sharp at 3x.
 
-Monaco runs a custom `interview-dark` theme registered in `beforeMount`, with
-`editor.background` set to `#00000000` so the glass panel shows through. If
-the editor ever renders on an opaque slab, that theme failed to register.
+**Migration in progress.** The nav is rebuilt. Hero, Features, Pricing, FAQ,
+Footer and the room still carry class names from the previous dark build
+(`.glass`, `.inset`, `.panel-deep`, `.chip`, `.btn-accent`, `.tab-active`,
+`ink-dim`, `ink-faint`). Those names are temporarily remapped in
+`globals.css` to flat light equivalents so the whole site reads in the new
+language while each section awaits its real redesign. Delete the remaps, and
+the aliases, once every section has been rebuilt.
+
+Monaco still runs the dark `interview-dark` theme registered in
+`beforeMount`. That is now inconsistent with the light page and needs a
+light theme when the room is redesigned.
 
 The room defaults to **Python**, with a starter and prompt that match
 ("return the largest value", input `[10, 5, 22, 11]` → `22`).

@@ -21,7 +21,7 @@ export default function Footer() {
         <div className="mt-8 flex flex-col items-center justify-between gap-4 text-xs text-ink-faint sm:flex-row">
           <Logo />
           <p>
-            © {new Date().getFullYear()} Interview Platform. All rights
+            © {new Date().getFullYear()} SyncR. All rights
             reserved.
           </p>
         </div>

@@ -1,110 +1,88 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------------
+   SyncR design tokens
+
+   Light, restrained, typography-led. The rules that keep it that way:
+   flat surfaces separated by hairlines rather than shadows, one accent used
+   sparingly, and no decorative colour beyond the logo mark itself.
+   ------------------------------------------------------------------------ */
 :root {
-  /* Base — deep navy with a violet cast */
-  --bg: #070A18;
-  --bg-deep: #04060F;
-  --bg-elevated: #0E1330;
-  --ink: #EEF0FB;
-  --ink-dim: #99A1C6;
-  --ink-faint: #656D94;
+  /* Surfaces */
+  --bg: #ffffff;
+  --bg-subtle: #f8f9fa;
+  --bg-sunken: #f1f3f5;
 
-  /* Accent: blue -> violet */
-  --accent-a: #5B8CFF;
-  --accent-b: #8B5CF6;
-  --accent-ring: rgba(91, 140, 255, 0.55);
+  /* Text — graphite rather than pure black, which reads harsh on white */
+  --ink: #1f2328;
+  --ink-body: #474d57;
+  --ink-muted: #6b7280;
 
-  /* Glass surfaces */
-  --glass-fill: rgba(255, 255, 255, 0.045);
-  --glass-fill-hover: rgba(255, 255, 255, 0.08);
-  --glass-border: rgba(255, 255, 255, 0.09);
-  --glass-border-bright: rgba(255, 255, 255, 0.15);
+  /* Transitional aliases. The sections still awaiting their redesign use
+     `ink-dim` / `ink-faint` from the previous dark build; pointing them at
+     the light scale keeps that copy legible in the meantime. Remove once
+     every section has been rebuilt. */
+  --ink-dim: #474d57;
+  --ink-faint: #6b7280;
 
-  /* Recessed panels: editor body, output box, FAQ rows */
-  --inset-fill: rgba(5, 8, 22, 0.6);
-  --inset-border: rgba(255, 255, 255, 0.06);
+  /* Hairlines. Structure comes from these, not from shadows. */
+  --line: #e5e7eb;
+  --line-strong: #d5d9df;
 
-  /* Frost strength.
-     These live in variables for a build reason, not a taste one: given a
-     literal value, Lightning CSS rewrites `backdrop-filter` to
-     `-webkit-backdrop-filter` *and drops the standard property*, which Chrome
-     does not accept — the blur then silently disappears and every glass
-     surface flattens into a plain translucent rectangle. Behind a var() the
-     value is opaque to that rewrite, so the standard property survives. */
-  --blur-glass: blur(22px) saturate(150%);
-  --blur-glass-strong: blur(24px) saturate(160%);
-  --blur-chip: blur(12px);
+  /* The single accent, sampled straight from the logo so the mark and the
+     interface are literally the same blue. 5.5:1 on white, so it is safe for
+     text as well as for solid buttons with white labels. */
+  --accent: #005ded;
+  --accent-hover: #004ac4;
+  --accent-wash: #eef4ff;
 
-  /* Depth. Glass only reads as glass if it casts a shadow onto whatever is
-     behind it, so every floating surface shares this one. */
-  --shadow-glass:
-    0 28px 70px -32px rgba(0, 0, 0, 0.9),
-    0 8px 24px -16px rgba(0, 0, 0, 0.7);
+  /* Nav frost.
+     Two things to know. First, the blur is declared at rest as well as when
+     scrolled, so the property animates instead of snapping on first scroll.
+     Second, these are variables for a build reason: given a literal value,
+     Lightning CSS rewrites `backdrop-filter` to `-webkit-backdrop-filter`
+     only and drops the standard property, which Chrome does not accept — the
+     blur then silently does nothing. Behind a var() it survives. */
+  --nav-filter-rest: blur(0px) saturate(100%);
+  --nav-filter-scrolled: blur(12px) saturate(180%);
 
-  /* Syntax */
-  --code-key: #A78BFA;
-  --code-fn: #60A5FA;
-  --code-str: #7DD3A8;
-  --code-num: #F0A868;
-  --code-punct: #8891B8;
-
-  /* Fonts */
-  --font-display: var(--font-display);
-  --font-body: var(--font-body);
-  --font-mono: var(--font-mono);
+  /* One typeface, sized and tracked for hierarchy. */
+  --font-display: var(--font-sans);
+  --font-body: var(--font-sans);
 }
 
 @theme inline {
   --color-bg: var(--bg);
-  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-bg-sunken: var(--bg-sunken);
   --color-ink: var(--ink);
+  --color-ink-body: var(--ink-body);
+  --color-ink-muted: var(--ink-muted);
   --color-ink-dim: var(--ink-dim);
   --color-ink-faint: var(--ink-faint);
-  --color-accent-a: var(--accent-a);
-  --color-accent-b: var(--accent-b);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --font-display: var(--font-display);
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);
 }
 
 * {
-  border-color: var(--glass-border);
+  border-color: var(--line);
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   background: var(--bg);
-  color: var(--ink);
+  color: var(--ink-body);
   font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
-  position: relative;
-}
-
-/* Ambient glow — a violet bloom top-centre over navy, per the design */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background:
-    radial-gradient(1100px 620px at 50% -14%, rgba(124, 92, 246, 0.40), transparent 64%),
-    radial-gradient(820px 540px at 6% 6%, rgba(59, 96, 226, 0.28), transparent 62%),
-    radial-gradient(900px 600px at 98% 22%, rgba(139, 92, 246, 0.26), transparent 62%),
-    radial-gradient(1100px 700px at 50% 106%, rgba(76, 108, 235, 0.18), transparent 64%);
-  pointer-events: none;
-}
-
-/* Faint grain, so the large gradients do not band */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  opacity: 0.03;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 .font-display {
@@ -116,246 +94,194 @@ body::after {
 }
 
 /* ------------------------------------------------------------------------
-   Glass
+   Nav
 
-   Three things separate convincing glass from a translucent rectangle, and
-   all three are here:
-
-   1. A lit edge. Real glass catches light on the edge facing the light and
-      loses it on the opposite edge, so the border is a gradient — bright at
-      the top-left, nearly gone at the bottom-right — painted with the
-      padding-box/border-box trick rather than a flat border colour.
-   2. A graded fill, brighter where the edge is lit, so the pane is not a
-      single uniform wash.
-   3. A cast shadow. Without one the pane looks printed onto the page rather
-      than floating above it.
-
-   saturate() on the backdrop is what lets the violet bloom read through the
-   pane as colour instead of as grey haze.
+   Transparent while the page is at the top, then settling into an opaque
+   white bar with a hairline underneath. Every property involved is listed in
+   the transition so the change eases in rather than snapping.
    ------------------------------------------------------------------------ */
-.glass {
-  background:
-    linear-gradient(
-        152deg,
-        rgba(255, 255, 255, 0.085),
-        rgba(255, 255, 255, 0.03) 44%,
-        rgba(255, 255, 255, 0.014)
-      )
-      padding-box,
-    linear-gradient(
-        150deg,
-        rgba(255, 255, 255, 0.30),
-        rgba(255, 255, 255, 0.08) 34%,
-        rgba(255, 255, 255, 0.035) 64%,
-        rgba(255, 255, 255, 0.12)
-      )
-      border-box;
-  border: 1px solid transparent;
-  backdrop-filter: var(--blur-glass);
-  box-shadow: var(--shadow-glass), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+.nav-bar {
+  background-color: rgba(255, 255, 255, 0);
+  border-bottom: 1px solid transparent;
+  backdrop-filter: var(--nav-filter-rest);
+  transition:
+    background-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    backdrop-filter 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.nav-bar[data-scrolled="true"] {
+  background-color: rgba(255, 255, 255, 0.88);
+  border-bottom-color: var(--line);
+  backdrop-filter: var(--nav-filter-scrolled);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+/* A nav link. The underline grows from the centre on hover — the only
+   flourish in the bar, and it costs nothing in weight. */
+.nav-link {
+  position: relative;
+  color: var(--ink-body);
+  transition: color 150ms ease;
+}
+
+.nav-link:hover {
+  color: var(--ink);
+}
+
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  right: 50%;
+  bottom: -6px;
+  height: 1.5px;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: left 200ms ease, right 200ms ease;
+}
+
+.nav-link:hover::after,
+.nav-link[aria-current="page"]::after {
+  left: 0;
+  right: 0;
+}
+
+.nav-link[aria-current="page"] {
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------------
+   Buttons
+   ------------------------------------------------------------------------ */
+
+/* Primary: flat, solid, pill. No gradient, no glow. */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: var(--accent);
+  color: #fff;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 150ms ease;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+}
+
+/* Secondary: hairline outline on white. */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-subtle);
+  border-color: var(--ink-muted);
+}
+
+/* ------------------------------------------------------------------------
+   Surfaces
+
+   The sections below the nav still carry class names from the previous dark
+   build. Rather than leave them styled for a dark page, each name now maps
+   to its light, flat equivalent, so the whole site reads in the new language
+   while the individual sections are redesigned.
+   ------------------------------------------------------------------------ */
+.glass,
 .glass-bright {
-  background:
-    linear-gradient(
-        152deg,
-        rgba(255, 255, 255, 0.14),
-        rgba(255, 255, 255, 0.055) 44%,
-        rgba(255, 255, 255, 0.028)
-      )
-      padding-box,
-    linear-gradient(
-        150deg,
-        rgba(255, 255, 255, 0.42),
-        rgba(255, 255, 255, 0.12) 34%,
-        rgba(255, 255, 255, 0.05) 64%,
-        rgba(255, 255, 255, 0.18)
-      )
-      border-box;
-  border: 1px solid transparent;
-  backdrop-filter: var(--blur-glass-strong);
-  box-shadow: var(--shadow-glass), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: none;
 }
 
-/* Hover state for interactive glass. A Tailwind hover:bg-white/… cannot do
-   this job: a background-color paints behind the gradient fill and is
-   therefore invisible, so the whole hover state has to live here. */
 .glass-hover {
-  transition: background 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+  transition: border-color 150ms ease, background-color 150ms ease;
 }
 
 .glass-hover:hover {
-  background:
-    linear-gradient(
-        152deg,
-        rgba(255, 255, 255, 0.13),
-        rgba(255, 255, 255, 0.05) 44%,
-        rgba(255, 255, 255, 0.022)
-      )
-      padding-box,
-    linear-gradient(
-        150deg,
-        rgba(255, 255, 255, 0.42),
-        rgba(255, 255, 255, 0.12) 34%,
-        rgba(255, 255, 255, 0.05) 64%,
-        rgba(255, 255, 255, 0.18)
-      )
-      border-box;
-  box-shadow: var(--shadow-glass), inset 0 1px 0 rgba(255, 255, 255, 0.11);
+  border-color: var(--line-strong);
+  background: var(--bg-subtle);
 }
 
-/* Cards that rise on hover. Kept separate from .glass-hover so bars and
-   buttons can brighten without moving. */
 .lift:hover {
-  transform: translateY(-3px);
+  transform: none;
 }
 
-/* Recessed panel: code body, output box, FAQ row. The opposite treatment —
-   light arrives from outside the pane, so the top edge is dark and the
-   shadow falls inward. */
-.inset {
-  background: linear-gradient(
-    180deg,
-    rgba(4, 6, 18, 0.74),
-    rgba(4, 6, 18, 0.58)
-  );
-  border: 1px solid var(--inset-border);
-  box-shadow:
-    inset 0 14px 28px -20px rgba(0, 0, 0, 0.95),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.03);
-}
-
-/* Deep panel: the closing call to action, which sits darker than the page
-   rather than lighter, so the section lands instead of floating off. */
+.inset,
 .panel-deep {
-  background:
-    radial-gradient(120% 140% at 50% 0%, rgba(124, 92, 246, 0.20), transparent 62%),
-    linear-gradient(180deg, rgba(10, 14, 38, 0.92), rgba(5, 8, 22, 0.94));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: var(--shadow-glass), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: var(--bg-subtle);
+  border: 1px solid var(--line);
+  box-shadow: none;
 }
 
-/* Primary action: blue -> violet, with a matching bloom */
 .btn-accent {
-  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--accent);
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow:
-    0 14px 34px -12px rgba(91, 140, 255, 0.70),
-    0 2px 6px -2px rgba(15, 20, 60, 0.60),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
-  transition: filter 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  font-weight: 500;
+  transition: background-color 150ms ease;
 }
 
 .btn-accent:hover {
-  filter: brightness(1.08);
-  box-shadow:
-    0 18px 40px -12px rgba(91, 140, 255, 0.80),
-    0 2px 6px -2px rgba(15, 20, 60, 0.60),
-    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  background: var(--accent-hover);
 }
 
-.btn-accent:active {
-  transform: translateY(1px);
-  filter: brightness(0.98);
+.chip {
+  background: var(--bg-subtle);
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+}
+
+.ring-accent {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.tab-active {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-bottom-color: transparent;
 }
 
 .text-gradient {
-  background: linear-gradient(100deg, var(--accent-a), var(--accent-b));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--accent);
 }
 
-/* Small uppercase-ish section chip: "Features", "Pricing" */
-.chip {
-  background: var(--glass-fill);
-  border: 1px solid var(--glass-border);
-  color: var(--ink-dim);
-  backdrop-filter: var(--blur-chip);
-}
-
-/* The selected plan. A ring on its own reads as a border; the outer bloom is
-   what actually makes the card look chosen. */
-.ring-accent {
-  box-shadow:
-    0 0 0 1px var(--accent-ring),
-    0 30px 70px -30px rgba(91, 140, 255, 0.65),
-    0 0 60px -20px rgba(139, 92, 246, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-
-/* Editor tab. Sits on the tab bar's bottom rule and covers it, the way a
-   real editor tab does, instead of floating above it as a pill. */
-.tab-active {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.10),
-    rgba(255, 255, 255, 0.035)
-  );
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom-color: transparent;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
-}
-
-/* Scrollbars. The platform default is an opaque slab that punches a hole
-   straight through the glass. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
-}
-
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.14);
-  border: 3px solid transparent;
-  background-clip: content-box;
-  border-radius: 999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.26);
-  background-clip: content-box;
-}
-
+/* ------------------------------------------------------------------------
+   Base
+   ------------------------------------------------------------------------ */
 ::selection {
-  background: rgba(91, 140, 255, 0.35);
-  color: #fff;
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-
-  .lift:hover {
-    transform: none;
-  }
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent-a);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
-@keyframes blink-cursor {
-  0%, 45% { opacity: 1; }
-  50%, 95% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-@keyframes float-slow {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-12px); }
 }

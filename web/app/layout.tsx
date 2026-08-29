@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-});
-
+// One typeface for the whole interface. Hierarchy comes from size, weight and
+// tracking rather than from mixing faces.
 const inter = Inter({
-  variable: "--font-body",
+  variable: "--font-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -21,18 +17,18 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Interview Platform — Seamless collaborative coding interviews",
+  title: "SyncR — Collaborative technical interviews",
   description:
-    "Conduct real-time technical assessments with an integrated, sandboxed code editor. Test candidates on their actual coding skills, not just theory.",
+    "Run real-time technical interviews in a shared editor with sandboxed code execution. Candidates join from a link — no install, no account.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full`}
     >
-      <body className="min-h-full flex flex-col bg-[#070A18] text-[#EEF0FB]">
+      <body className="min-h-full flex flex-col bg-white text-ink-body">
         {children}
       </body>
     </html>
