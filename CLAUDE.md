@@ -80,18 +80,23 @@ Go module path: `github.com/heshannethmina/interview-platform/backend`
     /cmd/server     → main entrypoint                      [exists]
     /internal
       /ws           → hub, registry, client, protocol      [exists]
-      /api          → REST handlers (auth, rooms, questions)   [planned]
-      /judge0       → Judge0 client/proxy                      [planned]
+      /api          → REST handlers (run; auth/rooms later)   [exists]
+      /judge0       → Judge0 client/proxy                      [exists]
       /store        → Postgres access layer                    [planned]
     /migrations     → SQL migrations                           [planned]
-  /docker-compose.yml                                          [planned]
+  /docker-compose.yml → Judge0 stack                           [exists]
+  /judge0.conf                                                 [exists]
   CLAUDE.md
 ```
 
 ## Running Locally
 
 ```bash
-# backend — WebSocket hub on :8080 (override with ADDR)
+# Judge0 (sandboxed execution) — must be up before the Run button works
+docker compose up -d
+curl http://localhost:2358/about
+
+# backend — WS hub + REST on :8080
 cd backend && go run ./cmd/server
 go test ./...            # -race needs CGO_ENABLED=1 and gcc on PATH
 
@@ -99,7 +104,11 @@ go test ./...            # -race needs CGO_ENABLED=1 and gcc on PATH
 cd web && npm run dev
 ```
 
+Backend env: `ADDR` (`:8080`), `JUDGE0_URL` (`http://localhost:2358`),
+`CORS_ORIGIN` (`*`).
+
 Health check: `GET /healthz`. WebSocket: `GET /ws/{roomID}`.
+Execution: `POST /api/run` with `{"language","source"}`.
 
 The frontend reads `NEXT_PUBLIC_WS_URL` (see `web/.env.example`), defaulting
 to `ws://localhost:8080`. Room IDs must match `^[A-Za-z0-9_-]{1,64}$`;
@@ -138,8 +147,8 @@ Two things that bite if forgotten:
 
 ## Current Status
 
-**Build order steps 1-3 are done: rooms sync end to end.** Two browsers on the
-same `/room/<id>` see each other's keystrokes.
+**Build order steps 1-4 are done.** Two browsers on the same `/room/<id>` see
+each other's keystrokes, and Run executes the code for real via Judge0.
 
 ### Backend
 
@@ -183,14 +192,39 @@ the editor ever renders on an opaque slab, that theme failed to register.
 The room defaults to **Python**, with a starter and prompt that match
 ("return the largest value", input `[10, 5, 22, 11]` → `22`).
 
+### Execution (step 4)
+
+- `internal/judge0/client.go` — submits source and polls for a verdict.
+  `wait=false` deliberately: Judge0's synchronous mode is documented as
+  unreliable under load. Language names map to Judge0 numeric IDs here, and
+  those IDs are pinned to the `judge0/judge0:1.13.0` image tag — if that tag
+  moves, re-check them against `GET /languages`.
+- `internal/api/run.go` — `POST /api/run`. Validates the language against our
+  own list rather than letting Judge0 reject it, so a client can never select
+  a language ID we did not intend to expose. Judge0 failures become a plain
+  502; its internals are logged, never returned.
+- `internal/api/cors.go` — the room page fetches cross-origin. WebSocket
+  upgrades are exempt from CORS, which is why the editor worked without this
+  and the Run button would not have.
+- `web/lib/runCode.ts` — posts to the Go API. The browser never talks to
+  Judge0 directly.
+
+Judge0 runs in its own containers with `ENABLE_NETWORK=false`, and brings its
+own Postgres and Redis — unrelated to the application database that steps 5-6
+will add. The Go process never executes submitted code; if a change ever makes
+it tempting to shell out, that is the wrong turn.
+
 ### Still stubbed
 
-- **`handleRun` is a `setTimeout`** returning fake output. No Judge0, no proxy
-  (step 4).
 - No auth: anyone with a room ID is in (step 5).
 - Nothing persists. A room's document lives only in its hub goroutine and dies
   when the last client leaves — pinned by `TestReopenedRoomStartsEmpty`.
-- Language selection is per-client, not synced.
+- **Run output is not shared.** Only the person who pressed Run sees the
+  result; the other side of the interview sees nothing. The document syncs but
+  the output panel does not. Fixing it means a new `result` frame relayed by
+  the hub — the natural next increment on top of step 4.
+- Language selection is per-client, not synced, so two people in one room can
+  submit the same source under different languages.
 - `CheckOrigin` allows every origin.
 
 ### Testing note
@@ -205,8 +239,17 @@ deliberate. Over real connections, enough writers overrun each other's send
 buffers, so the hub correctly drops them and the room empties — which turns a
 serialisation test into a flaky backpressure test. Keep them white-box.
 
+**Judge0 has never been exercised against the real service.** The client and
+proxy are covered against a fake Judge0, and the full chain (browser payload →
+Go → Judge0 → response) was verified against a stub, confirming the language-ID
+mapping, sandbox limits, CORS preflight and error paths. But
+`judge0/judge0:1.13.0` would not finish downloading here. First person with a
+working connection should run `docker compose up -d`, wait for
+`curl localhost:2358/about`, and press Run. The likeliest thing to be wrong is
+a language ID: verify against `GET /languages`.
+
 **The race detector has never been run** — it needs `CGO_ENABLED=1` and gcc on
 PATH. On a project whose point is concurrency, that is the highest-value gap
 to close.
 
-**Next:** step 4, Judge0 execution proxied through Go.
+**Next:** step 5, auth for interviewers plus shareable candidate links.

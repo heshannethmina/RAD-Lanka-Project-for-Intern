@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { applyRemoteText, type CodeEditor } from "@/lib/applyRemoteText";
 import { useRoomSocket, type ConnectionStatus } from "@/lib/useRoomSocket";
+import { formatRunResult, isFailure, runCode, RunError } from "@/lib/runCode";
 import { LogoMark } from "./Logo";
 
 const STARTER = `def max_element(values):
@@ -114,6 +115,7 @@ function Spinner() {
 export default function RoomEditor({ roomId }: { roomId: string }) {
   const [language, setLanguage] = useState("python");
   const [output, setOutput] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [running, setRunning] = useState(false);
 
   const editorRef = useRef<CodeEditor | null>(null);
@@ -204,14 +206,30 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
     [sendEdit],
   );
 
-  function handleRun() {
+  async function handleRun() {
+    const source = editorRef.current?.getValue() ?? "";
+    if (!source.trim()) {
+      setFailed(true);
+      setOutput("// Nothing to run.");
+      return;
+    }
+
     setRunning(true);
     setOutput(null);
-    // Placeholder for Judge0-backed execution via the Go backend.
-    setTimeout(() => {
-      setOutput(`// ${active.label} output:\n// 22\n// (Execution complete)`);
+    setFailed(false);
+
+    try {
+      const result = await runCode(language, source);
+      setOutput(formatRunResult(result));
+      setFailed(isFailure(result));
+    } catch (err) {
+      setFailed(true);
+      setOutput(
+        err instanceof RunError ? `// ${err.message}` : "// Run failed.",
+      );
+    } finally {
       setRunning(false);
-    }, 900);
+    }
   }
 
   return (
@@ -387,7 +405,11 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
             </h2>
             <div className="inset mt-3 min-h-[150px] rounded-xl px-4 py-3 font-mono text-[12px] leading-relaxed">
               {output ? (
-                <pre className="whitespace-pre-wrap text-[#7DD3A8]">
+                <pre
+                  className={`whitespace-pre-wrap ${
+                    failed ? "text-[#F8A2A2]" : "text-[#7DD3A8]"
+                  }`}
+                >
                   {output}
                 </pre>
               ) : (
