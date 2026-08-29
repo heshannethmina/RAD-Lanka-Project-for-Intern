@@ -50,6 +50,7 @@ export default function SyncLoader({
         alt=""
         width={chevWidth}
         height={chevHeight}
+        style={{ width: chevWidth, height: chevHeight }}
         className="syncr-loader__chev--left"
         priority
       />
@@ -58,6 +59,7 @@ export default function SyncLoader({
         alt=""
         width={cycleWidth}
         height={size}
+        style={{ width: cycleWidth, height: size }}
         className="syncr-loader__cycle"
         priority
       />
@@ -66,6 +68,7 @@ export default function SyncLoader({
         alt=""
         width={chevWidth}
         height={chevHeight}
+        style={{ width: chevWidth, height: chevHeight }}
         className="syncr-loader__chev--right"
         priority
       />

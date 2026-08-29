@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import Link from "next/link";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { applyRemoteText, type CodeEditor } from "@/lib/applyRemoteText";
 import { useRoomSocket, type ConnectionStatus } from "@/lib/useRoomSocket";
@@ -22,36 +23,30 @@ print(max_element([10, 5, 22, 11]))
 `;
 
 const LANGUAGES = [
-  { id: "python", label: "Python", emoji: "\u{1F40D}", file: "main.py" },
-  { id: "go", label: "Go", emoji: "\u{1F439}", file: "main.go" },
-  { id: "javascript", label: "JavaScript", emoji: "\u{1F7E8}", file: "main.js" },
+  { id: "go", label: "Go", file: "main.go" },
+  { id: "python", label: "Python", file: "main.py" },
+  { id: "javascript", label: "JavaScript", file: "main.js" },
 ];
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
-  connecting: "connecting",
-  open: "live",
-  closed: "reconnecting",
+  connecting: "Connecting",
+  open: "Live",
+  closed: "Reconnecting",
 };
 
 const STATUS_DOT: Record<ConnectionStatus, string> = {
-  connecting: "bg-[#F0A868]",
-  open: "bg-[#34D399]",
-  closed: "bg-[#F87171]",
+  connecting: "bg-[#D97706]",
+  open: "bg-[#16A34A]",
+  closed: "bg-[#DC2626]",
 };
 
-/** Distinct colours so overlapping avatars stay tellable apart. */
-const PEER_COLORS = [
-  "linear-gradient(135deg,#5B8CFF,#8B5CF6)",
-  "linear-gradient(135deg,#F472B6,#8B5CF6)",
-  "linear-gradient(135deg,#34D399,#3B82F6)",
-  "linear-gradient(135deg,#F0A868,#F472B6)",
-  "linear-gradient(135deg,#22D3EE,#5B8CFF)",
-];
+/** Muted, distinguishable, and quiet enough to sit in a working tool. */
+const PEER_COLORS = ["#005DED", "#0F766E", "#B45309", "#7C3AED", "#475569"];
 
 const MAX_AVATARS = 5;
 
 /**
- * Overlapping presence avatars. The count is real — it comes from the hub's
+ * Stacked participant avatars. The count is real — it comes from the hub's
  * presence frames — so this grows and shrinks as people join and leave.
  */
 function PeerAvatars({ peers }: { peers: number }) {
@@ -60,30 +55,23 @@ function PeerAvatars({ peers }: { peers: number }) {
 
   return (
     <div className="flex items-center">
-      <div className="flex -space-x-2.5">
+      <div className="flex -space-x-2">
         {Array.from({ length: shown }, (_, i) => (
           <span
             key={i}
             title={i === 0 ? "You" : `Participant ${i + 1}`}
-            className={`relative flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-[0_4px_12px_-4px_rgba(0,0,0,0.8)] ring-2 ${
-              i === 0 ? "ring-[#34D399]" : "ring-[#0E1330]"
-            }`}
+            className="relative flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold text-white ring-2 ring-white"
             style={{ background: PEER_COLORS[i % PEER_COLORS.length] }}
           >
-            <span className="absolute inset-0 rounded-full bg-gradient-to-b from-white/25 to-transparent" />
-            <span className="relative">
-              {i === 0 ? "Y" : String.fromCharCode(65 + i)}
-            </span>
+            {i === 0 ? "You"[0] : String.fromCharCode(65 + i)}
             {i === 0 && (
-              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0E1330] bg-[#34D399]" />
+              <span className="absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full border-2 border-white bg-[#16A34A]" />
             )}
           </span>
         ))}
       </div>
       {overflow > 0 && (
-        <span className="ml-2 font-mono text-[10px] text-ink-faint">
-          +{overflow}
-        </span>
+        <span className="ml-2 text-[12px] text-ink-muted">+{overflow}</span>
       )}
     </div>
   );
@@ -91,26 +79,9 @@ function PeerAvatars({ peers }: { peers: number }) {
 
 function Spinner() {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      className="h-3.5 w-3.5 animate-spin"
-      aria-hidden="true"
-    >
-      <circle
-        cx="8"
-        cy="8"
-        r="6"
-        fill="none"
-        stroke="rgba(255,255,255,0.35)"
-        strokeWidth="2.5"
-      />
-      <path
-        d="M8 2 a6 6 0 0 1 6 6"
-        fill="none"
-        stroke="#fff"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 animate-spin" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2.5" />
+      <path d="M8 2 a6 6 0 0 1 6 6" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -129,7 +100,7 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
   // Monaco may mount after the socket has already delivered the snapshot.
   const pendingText = useRef<string | null>(null);
 
-  const active = LANGUAGES.find((l) => l.id === language) ?? LANGUAGES[0];
+  const active = LANGUAGES.find((l) => l.id === language) ?? LANGUAGES[1];
 
   const write = useCallback((text: string) => {
     const editor = editorRef.current;
@@ -161,28 +132,28 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
   });
 
   const handleBeforeMount = useCallback((monaco: Monaco) => {
-    // Transparent background so the glass panel shows through the editor,
-    // which is what makes the room read as one surface rather than a widget
-    // pasted onto a card.
-    monaco.editor.defineTheme("interview-dark", {
-      base: "vs-dark",
+    // The same GitHub-light token palette the marketing editor mockup uses,
+    // so the product and the page it is advertised on agree.
+    monaco.editor.defineTheme("syncr-light", {
+      base: "vs",
       inherit: true,
       rules: [
-        { token: "keyword", foreground: "A78BFA" },
-        { token: "string", foreground: "7DD3A8" },
-        { token: "number", foreground: "F0A868" },
-        { token: "comment", foreground: "5B6390", fontStyle: "italic" },
-        { token: "type", foreground: "60A5FA" },
-        { token: "function", foreground: "60A5FA" },
+        { token: "keyword", foreground: "CF222E" },
+        { token: "string", foreground: "0A3069" },
+        { token: "number", foreground: "0550AE" },
+        { token: "comment", foreground: "6E7781", fontStyle: "italic" },
+        { token: "type", foreground: "8250DF" },
+        { token: "function", foreground: "8250DF" },
       ],
       colors: {
-        "editor.background": "#00000000",
-        "editorGutter.background": "#00000000",
-        "minimap.background": "#00000000",
-        "editor.lineHighlightBackground": "#FFFFFF0A",
-        "editorLineNumber.foreground": "#4C5480",
-        "editorLineNumber.activeForeground": "#9AA2C8",
-        "editorIndentGuide.background1": "#FFFFFF12",
+        "editor.background": "#FFFFFF",
+        "editorGutter.background": "#FFFFFF",
+        "editor.lineHighlightBackground": "#F6F8FA",
+        "editor.selectionBackground": "#DDEAFF",
+        "editorLineNumber.foreground": "#AFB8C1",
+        "editorLineNumber.activeForeground": "#6E7781",
+        "editorIndentGuide.background1": "#EDEFF2",
+        "minimap.background": "#FFFFFF",
       },
     });
   }, []);
@@ -213,7 +184,7 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
     const source = editorRef.current?.getValue() ?? "";
     if (!source.trim()) {
       setFailed(true);
-      setOutput("// Nothing to run.");
+      setOutput("Nothing to run.");
       return;
     }
 
@@ -227,160 +198,99 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
       setFailed(isFailure(result));
     } catch (err) {
       setFailed(true);
-      setOutput(
-        err instanceof RunError ? `// ${err.message}` : "// Run failed.",
-      );
+      setOutput(err instanceof RunError ? err.message : "Run failed.");
     } finally {
       setRunning(false);
     }
   }
 
   return (
-    <div className="flex h-screen flex-col gap-4 p-4 sm:p-5">
+    <div className="flex h-screen flex-col bg-white">
       {/* ---------- top bar ---------- */}
-      <div className="relative shrink-0">
-        <div className="glass flex items-center justify-between rounded-2xl px-4 py-3">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-2.5">
-              <LogoMark className="h-6 w-6" />
-              <span className="hidden font-display text-[12px] font-semibold leading-[1.15] tracking-tight text-ink sm:block">
-                Interview
-                <br />
-                Platform
-              </span>
-            </span>
-            <span className="h-7 w-px bg-white/10" />
-            <span className="font-mono text-[13px] text-ink-dim">
-              room / <span className="font-semibold text-ink">{roomId}</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <span
-              className="flex items-center gap-1.5"
-              title={`${STATUS_LABEL[status]} · ${peers} in room`}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`}
-              />
-              <span className="hidden font-mono text-[10px] text-ink-faint lg:block">
-                {STATUS_LABEL[status]}
-              </span>
-            </span>
-
-            <PeerAvatars peers={peers} />
-
-            <span className="h-7 w-px bg-white/10" />
-
-            <div className="relative">
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                aria-label="Language"
-                className="glass glass-hover cursor-pointer appearance-none rounded-xl py-2 pl-3 pr-9 text-[13px] text-ink outline-none"
-              >
-                {LANGUAGES.map((l) => (
-                  <option key={l.id} value={l.id} className="bg-[#0E1330]">
-                    {l.emoji} {l.label}
-                  </option>
-                ))}
-              </select>
-              <svg
-                viewBox="0 0 16 16"
-                className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4 6l4 4 4-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-
-            <button
-              onClick={handleRun}
-              disabled={running}
-              className="btn-accent flex items-center gap-2 rounded-xl px-4 py-2 text-[13px] font-semibold disabled:opacity-80"
-            >
-              {running ? (
-                <>
-                  <Spinner />
-                  Running...
-                </>
-              ) : (
-                <>
-                  <svg
-                    viewBox="0 0 16 16"
-                    className="h-3.5 w-3.5"
-                    aria-hidden="true"
-                  >
-                    <path d="M5 3.5v9l7-4.5z" fill="currentColor" />
-                  </svg>
-                  Run
-                </>
-              )}
-            </button>
-          </div>
+      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link href="/" className="shrink-0 rounded-sm text-accent">
+            <LogoMark className="h-[22px] w-auto" />
+          </Link>
+          <span className="h-5 w-px shrink-0 bg-line" />
+          <span className="truncate font-mono text-[13px] text-ink-muted">
+            room / <span className="font-medium text-ink">{roomId}</span>
+          </span>
         </div>
 
-        {running && (
-          <p className="absolute right-4 top-full mt-1 font-mono text-[10px] text-ink-faint">
-            {"// Execution in progress..."}
-          </p>
-        )}
-      </div>
-
-      {/* ---------- editor + side panels ---------- */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
-        <div className="glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl">
-          {/* tab bar */}
-          <div className="flex items-end justify-between border-b border-white/[0.07] px-3 pt-2">
-            {/* -mb-px pulls the tab down over the bar's rule, so it reads as
-                one continuous surface with the editor rather than a pill
-                floating on a bar. */}
-            <span className="tab-active -mb-px flex items-center gap-2 rounded-t-lg px-3.5 py-2">
-              <span className="text-[11px]">{active.emoji}</span>
-              <span className="font-mono text-[12px] text-ink">
-                {active.file}
-              </span>
-              <span className="text-[11px] text-ink-faint" aria-hidden="true">
-                &#10005;
-              </span>
+        <div className="flex items-center gap-4">
+          <span
+            className="hidden items-center gap-1.5 sm:flex"
+            title={`${STATUS_LABEL[status]} · ${peers} in room`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]}`} />
+            <span className="text-[12px] text-ink-muted">
+              {STATUS_LABEL[status]}
             </span>
+          </span>
 
-            <div className="flex items-center gap-3 pb-2 pr-1 text-ink-faint">
-              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
-                <path
-                  d="M5 3.5v9l7-4.5z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
-                <rect
-                  x="2"
-                  y="3"
-                  width="12"
-                  height="10"
-                  rx="1.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                />
-                <path d="M8 3v10" stroke="currentColor" strokeWidth="1.4" />
-              </svg>
-              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
-                <circle cx="4" cy="8" r="1.2" fill="currentColor" />
-                <circle cx="8" cy="8" r="1.2" fill="currentColor" />
-                <circle cx="12" cy="8" r="1.2" fill="currentColor" />
-              </svg>
-            </div>
+          <PeerAvatars peers={peers} />
+
+          <span className="h-5 w-px bg-line" />
+
+          <div className="relative">
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              aria-label="Language"
+              className="h-9 cursor-pointer appearance-none rounded-lg border border-line bg-white py-0 pl-3 pr-9 text-[13px] text-ink outline-none transition-colors hover:border-line-strong"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <svg
+              viewBox="0 0 16 16"
+              className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 6l4 4 4-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+
+          <button
+            onClick={handleRun}
+            disabled={running}
+            className="btn-primary h-9 gap-2 px-4 text-[13px] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {running ? (
+              <>
+                <Spinner />
+                Running
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
+                  <path d="M5 3.5v9l7-4.5z" fill="currentColor" />
+                </svg>
+                Run
+              </>
+            )}
+          </button>
+        </div>
+      </header>
+
+      {/* ---------- editor + sidebar ---------- */}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex h-9 shrink-0 items-center border-b border-line px-3">
+            <span className="rounded-md border border-line bg-bg-subtle px-2.5 py-1 font-mono text-[11px] text-ink">
+              {active.file}
+            </span>
           </div>
 
           <div className="min-h-0 flex-1">
@@ -388,7 +298,7 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
               height="100%"
               language={language}
               defaultValue={STARTER}
-              theme="interview-dark"
+              theme="syncr-light"
               beforeMount={handleBeforeMount}
               onMount={handleMount}
               onChange={handleChange}
@@ -396,7 +306,7 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
                 fontFamily: "var(--font-mono)",
                 fontSize: 13.5,
                 minimap: { enabled: true, size: "fit", showSlider: "always" },
-                padding: { top: 18 },
+                padding: { top: 16 },
                 scrollBeyondLastLine: false,
                 renderLineHighlight: "line",
                 smoothScrolling: true,
@@ -405,57 +315,48 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
           </div>
         </div>
 
-        {/* right column */}
-        <div className="flex w-full shrink-0 flex-col gap-4 lg:w-[330px]">
-          <div className="glass flex flex-col rounded-2xl p-5">
-            <h2 className="font-display text-lg font-semibold tracking-tight text-ink">
-              Output
-            </h2>
-            <div className="inset mt-3 min-h-[150px] rounded-xl px-4 py-3 font-mono text-[12px] leading-relaxed">
+        {/* Sidebar */}
+        <aside className="flex w-full shrink-0 flex-col border-t border-line lg:w-[340px] lg:border-l lg:border-t-0">
+          <section className="flex min-h-[200px] flex-col border-b border-line p-4">
+            <h2 className="text-[13px] font-semibold text-ink">Output</h2>
+            <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-bg-subtle p-3">
               {output ? (
                 <pre
-                  className={`whitespace-pre-wrap ${
-                    failed ? "text-[#F8A2A2]" : "text-[#7DD3A8]"
+                  className={`whitespace-pre-wrap font-mono text-[12px] leading-relaxed ${
+                    failed ? "text-[#B42318]" : "text-ink"
                   }`}
                 >
                   {output}
                 </pre>
               ) : (
-                <span className="text-ink-faint">
+                <p className="font-mono text-[12px] text-ink-muted">
                   Run the code to see output here.
-                </span>
+                </p>
               )}
             </div>
-          </div>
+          </section>
 
-          <div className="glass flex min-h-0 flex-1 flex-col rounded-2xl p-5">
-            <h2 className="font-display text-lg font-semibold tracking-tight text-ink">
-              Prompt
-            </h2>
-            <div className="inset mt-3 min-h-0 flex-1 overflow-auto rounded-xl px-4 py-4">
+          <section className="flex min-h-0 flex-1 flex-col p-4">
+            <h2 className="text-[13px] font-semibold text-ink">Prompt</h2>
+            <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-bg-subtle p-4">
               <h3 className="text-[13px] font-semibold text-ink">
-                Interview Question
+                Largest value in a list
               </h3>
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-dim">
-                <span className="font-semibold text-ink">Problem:</span> Given a
-                list of integers, write a function that returns the largest
-                value.
+              <p className="mt-3 text-[13px] leading-relaxed text-ink-body">
+                Given a list of integers, write a function that returns the
+                largest value.
               </p>
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-dim">
-                <span className="font-semibold text-ink">Example:</span>
-                <br />
-                <span className="font-mono text-[12px]">
-                  &nbsp;&nbsp;Input: [10, 5, 22, 11]
-                  <br />
-                  &nbsp;&nbsp;Output: 22
-                </span>
+              <p className="mt-3 text-[13px] leading-relaxed text-ink-body">
+                For the input <code className="font-mono">[10, 5, 22, 11]</code>{" "}
+                it should return <code className="font-mono">22</code>.
               </p>
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-dim">
-                Handle edge cases, such as an empty list.
+              <p className="mt-3 text-[13px] leading-relaxed text-ink-body">
+                Handle the edge cases too — an empty list, and a list where the
+                largest value appears more than once.
               </p>
             </div>
-          </div>
-        </div>
+          </section>
+        </aside>
       </div>
     </div>
   );
