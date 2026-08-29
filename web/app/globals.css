@@ -18,13 +18,6 @@
   --ink-body: #474d57;
   --ink-muted: #6b7280;
 
-  /* Transitional aliases. The sections still awaiting their redesign use
-     `ink-dim` / `ink-faint` from the previous dark build; pointing them at
-     the light scale keeps that copy legible in the meantime. Remove once
-     every section has been rebuilt. */
-  --ink-dim: #474d57;
-  --ink-faint: #6b7280;
-
   /* Hairlines. Structure comes from these, not from shadows. */
   --line: #e5e7eb;
   --line-strong: #d5d9df;
@@ -68,8 +61,6 @@
   --color-ink: var(--ink);
   --color-ink-body: var(--ink-body);
   --color-ink-muted: var(--ink-muted);
-  --color-ink-dim: var(--ink-dim);
-  --color-ink-faint: var(--ink-faint);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
   --color-accent: var(--accent);
@@ -397,58 +388,6 @@ body {
   border: 1px solid var(--line);
   box-shadow: 0 12px 32px -14px rgba(16, 24, 40, 0.16);
 }
-
-/* ------------------------------------------------------------------------
-   Surfaces
-
-   The landing page no longer uses these; only the interview room still
-   carries class names from the previous dark build. Each maps to its light,
-   flat equivalent so the room is not left styled for a dark page. All of it
-   goes when the room is redesigned.
-   ------------------------------------------------------------------------ */
-.glass {
-  background: #fff;
-  border: 1px solid var(--line);
-  box-shadow: none;
-}
-
-.glass-hover {
-  transition: border-color 150ms ease, background-color 150ms ease;
-}
-
-.glass-hover:hover {
-  border-color: var(--line-strong);
-  background: var(--bg-subtle);
-}
-
-.inset {
-  background: var(--bg-subtle);
-  border: 1px solid var(--line);
-  box-shadow: none;
-}
-
-.btn-accent {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 500;
-  transition: background-color 150ms ease;
-}
-
-.btn-accent:hover {
-  background: var(--accent-hover);
-}
-
-
-.tab-active {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-bottom-color: transparent;
-}
-
 
 /* ------------------------------------------------------------------------
    Base

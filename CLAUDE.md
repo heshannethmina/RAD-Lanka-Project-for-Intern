@@ -260,15 +260,12 @@ carries one that disables both the splash and the reveal's hidden state;
 without it, a browser with JS off gets a blank page behind a cover with
 nothing to dismiss it.
 
-**Migration status.** The whole landing page — nav, hero, features, pricing,
-FAQ and the closing CTA — is rebuilt in the light system. Only the interview
-room still carries class names from the previous dark build (`.glass`,
-`.glass-hover`, `.inset`, `.btn-accent`, `.tab-active`, `ink-dim`,
-`ink-faint`), remapped in `globals.css` to flat light equivalents so it is not
-left styled for a dark page. Those remaps and the `--ink-dim` / `--ink-faint`
-aliases all go when the room is redesigned. The classes the landing page had
-stopped using (`.glass-bright`, `.panel-deep`, `.chip`, `.ring-accent`,
-`.text-gradient`, `.lift`) have already been deleted.
+**Migration complete.** Nav, hero, features, pricing, FAQ, closing CTA and
+the interview room are all on the light system. The compatibility layer that
+mapped the old dark class names (`.glass`, `.inset`, `.btn-accent`,
+`.tab-active`, `.chip`, `.ring-accent`, `.panel-deep`, `.text-gradient`,
+`.lift`) and the `--ink-dim` / `--ink-faint` aliases has been deleted — 52
+lines of CSS with no callers left.
 
 The FAQ accordion animates height with `grid-template-rows: 0fr -> 1fr`
 rather than by measuring `scrollHeight`, so it animates to the content's
@@ -278,9 +275,45 @@ the `0fr` row, and a collapsed panel needs `inert` — the content stays in the
 DOM for the animation, so it has to be pulled out of the a11y tree and tab
 order explicitly.
 
-Monaco still runs the dark `interview-dark` theme registered in
-`beforeMount`. That is now inconsistent with the light page and needs a
-light theme when the room is redesigned.
+### The 3D mark
+
+`components/Logo3D.tsx` renders `public/syncr-mark.glb` turning slowly in the
+hero, behind `components/HeroVisual.tsx`, which code-splits it
+(`dynamic(..., { ssr: false })`) and holds the space with the flat PNG until
+the model resolves.
+
+The source export was 3.2MB for only 31k triangles — unwelded float32, no
+compression. It is now 402KB:
+
+```bash
+npx @gltf-transform/cli optimize in.glb out.glb --compress meshopt
+```
+
+Re-run that after any re-export; do not ship the raw file. **Meshopt, not
+Draco** — drei bundles the meshopt decoder from three-stdlib, whereas the
+Draco path fetches its decoder from gstatic at runtime. Quantize-only was
+also measured, at 1.58MB, so meshopt is worth the decoder.
+
+Two things keep it from being a battery drain: the frame loop stops when the
+hero scrolls out of view, and the lighting environment is built in-memory
+from `<Lightformer>` shapes with `frames={1}` rather than loaded as an HDR —
+which also means no CDN round trip. `prefers-reduced-motion` stops the spin.
+
+Note when debugging this in a headless or backgrounded browser: rAF is
+throttled to almost nothing when the page is not compositing, so the model
+looks frozen and screenshots come back stale. Count WebGL draw calls rather
+than trusting a screenshot.
+
+### Footer contact details are placeholders
+
+`CONTACT_PLACEHOLDER` in `components/Footer.tsx` holds an invented email,
+phone and city. **Replace them before the site goes anywhere public.** They
+are grouped in one named constant rather than scattered through the markup
+precisely so they are hard to miss.
+
+Monaco runs a `syncr-light` theme registered in `beforeMount`, using the
+same GitHub-light token palette as the marketing editor mockup so the
+product and the page advertising it agree.
 
 The room defaults to **Python**, with a starter and prompt that match
 ("return the largest value", input `[10, 5, 22, 11]` → `22`).
