@@ -30,7 +30,7 @@ export default function Hero() {
             </Link>
             <a
               href="#pricing"
-              className="glass rounded-xl px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white/[0.08]"
+              className="glass glass-hover rounded-xl px-5 py-3 text-sm font-semibold text-ink"
             >
               See pricing
             </a>

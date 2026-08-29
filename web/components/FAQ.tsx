@@ -44,7 +44,7 @@ export default function FAQ() {
           <details
             key={faq.q}
             open={i === 0}
-            className="group glass rounded-xl px-5 py-4 [&_summary::-webkit-details-marker]:hidden"
+            className="group glass glass-hover rounded-xl px-5 py-4 [&_summary::-webkit-details-marker]:hidden"
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
               <span className="text-sm font-medium text-ink">

@@ -105,7 +105,7 @@ export default function Features() {
           {features.map((f) => (
             <div
               key={f.title}
-              className="glass flex flex-col rounded-2xl p-6 transition hover:bg-white/[0.07]"
+              className="glass glass-hover lift flex flex-col rounded-2xl p-6"
             >
               <div className="flex items-start justify-between gap-4">
                 <h3 className="max-w-[70%] font-display text-lg font-semibold leading-snug tracking-tight text-ink">
@@ -120,7 +120,7 @@ export default function Features() {
                 {f.desc}
               </p>
 
-              <div className="mt-5 h-[120px] w-full overflow-hidden rounded-xl bg-white/[0.03]">
+              <div className="mt-5 h-[120px] w-full overflow-hidden rounded-xl border border-white/[0.06] bg-gradient-to-b from-white/[0.06] to-white/[0.015]">
                 {f.art}
               </div>
             </div>

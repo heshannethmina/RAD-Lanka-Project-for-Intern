@@ -65,14 +65,17 @@ function PeerAvatars({ peers }: { peers: number }) {
           <span
             key={i}
             title={i === 0 ? "You" : `Participant ${i + 1}`}
-            className={`relative flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold text-white ring-2 ${
-              i === 0 ? "ring-[#34D399]" : "ring-[#0B1029]"
+            className={`relative flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-[0_4px_12px_-4px_rgba(0,0,0,0.8)] ring-2 ${
+              i === 0 ? "ring-[#34D399]" : "ring-[#0E1330]"
             }`}
             style={{ background: PEER_COLORS[i % PEER_COLORS.length] }}
           >
-            {i === 0 ? "Y" : String.fromCharCode(65 + i)}
+            <span className="absolute inset-0 rounded-full bg-gradient-to-b from-white/25 to-transparent" />
+            <span className="relative">
+              {i === 0 ? "Y" : String.fromCharCode(65 + i)}
+            </span>
             {i === 0 && (
-              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0B1029] bg-[#34D399]" />
+              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0E1330] bg-[#34D399]" />
             )}
           </span>
         ))}
@@ -274,7 +277,7 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
                 aria-label="Language"
-                className="glass appearance-none rounded-xl py-2 pl-3 pr-9 text-[13px] text-ink outline-none"
+                className="glass glass-hover cursor-pointer appearance-none rounded-xl py-2 pl-3 pr-9 text-[13px] text-ink outline-none"
               >
                 {LANGUAGES.map((l) => (
                   <option key={l.id} value={l.id} className="bg-[#0E1330]">
@@ -335,16 +338,21 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
         <div className="glass flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl">
           {/* tab bar */}
-          <div className="flex items-center justify-between border-b border-white/[0.07] px-3 py-2">
-            <span className="inset flex items-center gap-2 rounded-lg px-3 py-1.5">
+          <div className="flex items-end justify-between border-b border-white/[0.07] px-3 pt-2">
+            {/* -mb-px pulls the tab down over the bar's rule, so it reads as
+                one continuous surface with the editor rather than a pill
+                floating on a bar. */}
+            <span className="tab-active -mb-px flex items-center gap-2 rounded-t-lg px-3.5 py-2">
               <span className="text-[11px]">{active.emoji}</span>
               <span className="font-mono text-[12px] text-ink">
                 {active.file}
               </span>
-              <span className="text-ink-faint">&#10005;</span>
+              <span className="text-[11px] text-ink-faint" aria-hidden="true">
+                &#10005;
+              </span>
             </span>
 
-            <div className="flex items-center gap-3 pr-1 text-ink-faint">
+            <div className="flex items-center gap-3 pb-2 pr-1 text-ink-faint">
               <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
                 <path
                   d="M5 3.5v9l7-4.5z"

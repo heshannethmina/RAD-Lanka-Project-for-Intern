@@ -47,8 +47,8 @@ export default function Pricing() {
               key={plan.name}
               className={`flex flex-col rounded-2xl p-7 text-center ${
                 plan.highlighted
-                  ? "glass-bright ring-1 ring-[var(--accent-ring)] shadow-[0_20px_60px_-25px_rgba(91,140,255,0.7)]"
-                  : "glass"
+                  ? "glass-bright ring-accent lg:-translate-y-2"
+                  : "glass glass-hover lift"
               }`}
             >
               <h3 className="font-display text-lg font-semibold tracking-tight text-ink">
@@ -78,10 +78,8 @@ export default function Pricing() {
 
               <Link
                 href="/room/demo"
-                className={`mt-7 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
-                  plan.highlighted
-                    ? "btn-accent"
-                    : "glass text-ink hover:bg-white/[0.08]"
+                className={`mt-7 rounded-xl px-5 py-2.5 text-sm font-semibold ${
+                  plan.highlighted ? "btn-accent" : "glass glass-hover text-ink"
                 }`}
               >
                 {plan.cta}

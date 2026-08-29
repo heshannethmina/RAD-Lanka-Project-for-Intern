@@ -180,10 +180,42 @@ each other's keystrokes, and Run executes the code for real via Judge0.
 
 The UI follows a supplied mockup: blue (`--accent-a #5B8CFF`) to violet
 (`--accent-b #8B5CF6`) on deep navy (`--bg #070A18`), with a violet bloom
-top-centre. Everything is built from three utilities in `app/globals.css` —
-`.glass` (floating cards), `.inset` (recessed panels: code body, output box,
-FAQ rows) and `.btn-accent` (primary action). Product name is **Interview
-Platform**; `components/Logo.tsx` is the single source for the mark.
+top-centre. Everything is built from a small set of utilities in
+`app/globals.css`:
+
+| Utility | Used for |
+|---|---|
+| `.glass` | floating cards, bars, panels |
+| `.glass-bright` | the surface that should read as picked or nearest |
+| `.glass-hover` | hover state for interactive glass (see below) |
+| `.lift` | cards that rise on hover; paired with `.glass-hover` |
+| `.inset` | recessed panels: code body, output box, prompt, FAQ rows |
+| `.panel-deep` | the closing CTA, which sits darker than the page |
+| `.btn-accent` | primary action |
+| `.ring-accent` | the selected pricing plan's glow |
+| `.tab-active` | the editor's file tab |
+
+Three details in there are load-bearing, and all three are easy to undo by
+accident:
+
+- **`backdrop-filter` values must go through a `var()`.** Given a literal,
+  Lightning CSS rewrites the declaration to `-webkit-backdrop-filter` *only*
+  and drops the standard property. Chrome does not support the prefixed
+  alias, so the blur silently vanishes and every glass surface flattens into
+  a plain translucent rectangle — which is exactly what the whole design
+  depends on. The `--blur-glass*` variables exist for that reason, not for
+  taste. Check with `getComputedStyle($0).backdropFilter` — `none` means it
+  regressed.
+- **Glass hover cannot be a Tailwind `hover:bg-white/…`.** `.glass` paints
+  its fill with a `background` gradient, and a `background-color` sits behind
+  it, so the hover would be invisible. That is what `.glass-hover` is for.
+- **The edge is a gradient, not a border colour** (`padding-box` fill plus
+  `border-box` border, over `border: 1px solid transparent`). Replacing it
+  with a flat `border-color` loses the lit top-left edge that makes the pane
+  read as glass.
+
+Product name is **Interview Platform**; `components/Logo.tsx` is the single
+source for the mark.
 
 Monaco runs a custom `interview-dark` theme registered in `beforeMount`, with
 `editor.background` set to `#00000000` so the glass panel shows through. If

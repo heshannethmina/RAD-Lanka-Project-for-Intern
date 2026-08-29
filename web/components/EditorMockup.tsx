@@ -44,7 +44,7 @@ export default function EditorMockup() {
   return (
     <div className="relative">
       <div
-        className="glass-bright relative overflow-hidden rounded-2xl shadow-[0_40px_90px_-30px_rgba(0,0,0,0.8)]"
+        className="glass-bright relative overflow-hidden rounded-2xl"
         style={{ animation: "float-slow 8s ease-in-out infinite" }}
       >
         {/* window chrome */}
@@ -59,8 +59,10 @@ export default function EditorMockup() {
           </span>
         </div>
 
-        {/* code body */}
-        <div className="relative bg-[var(--inset-fill)] px-4 py-5">
+        {/* Code body. Frosted rather than near-black: in the hero this panel
+            sits over the violet bloom and should read as a pane of glass
+            catching the light, not as a dark editor cut out of the page. */}
+        <div className="relative bg-gradient-to-b from-white/[0.15] to-white/[0.05] px-4 py-5">
           {LINES.map((line, i) => (
             <div key={i} className="flex items-center gap-3 py-[5px]">
               <span className="w-4 shrink-0 text-right font-mono text-[9px] text-ink-faint">

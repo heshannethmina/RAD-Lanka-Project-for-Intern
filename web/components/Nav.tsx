@@ -2,11 +2,26 @@ import Link from "next/link";
 import Logo from "./Logo";
 
 const LINKS = [
-  { href: "#home", label: "Home" },
-  { href: "#product", label: "Product" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#faq", label: "FAQ" },
+  { href: "#home", label: "Home", active: true, caret: false },
+  { href: "#product", label: "Product", active: false, caret: true },
+  { href: "#pricing", label: "Pricing", active: false, caret: false },
+  { href: "#faq", label: "FAQ", active: false, caret: false },
 ];
+
+function Caret() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden="true">
+      <path
+        d="M4 6.5l4 4 4-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export default function Nav() {
   return (
@@ -22,9 +37,12 @@ export default function Nav() {
               <a
                 key={link.href}
                 href={link.href}
-                className="text-[13px] text-ink-dim transition hover:text-ink"
+                className={`flex items-center gap-1 text-[13px] transition hover:text-ink ${
+                  link.active ? "text-ink" : "text-ink-dim"
+                }`}
               >
                 {link.label}
+                {link.caret && <Caret />}
               </a>
             ))}
           </nav>

@@ -5,7 +5,7 @@ export default function Footer() {
   return (
     <footer className="px-6 pb-10">
       <div className="mx-auto max-w-5xl">
-        <div className="glass-bright flex flex-col items-center gap-4 rounded-2xl px-8 py-14 text-center">
+        <div className="panel-deep flex flex-col items-center gap-4 rounded-2xl px-8 py-14 text-center">
           <h2 className="max-w-lg font-display text-3xl font-semibold leading-tight tracking-tight sm:text-[2.25rem]">
             Ready to start your first collaborative interview?
           </h2>
