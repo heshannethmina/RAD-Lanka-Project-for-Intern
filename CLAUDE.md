@@ -68,20 +68,49 @@ Each active interview room has exactly one hub goroutine that owns the document 
 
 ## Repository Structure
 
+Go module path: `github.com/heshannethmina/interview-platform/backend`
+
 ```
 /interview-platform
-  /web              → Next.js app
+  /web              → Next.js app                          [exists]
   /backend          → Go backend
-    /cmd/server     → main entrypoint
+    /cmd/server     → main entrypoint                      [exists]
     /internal
-      /ws           → WebSocket hub, room, client connection logic
-      /api          → REST handlers (auth, rooms, questions)
-      /judge0        → Judge0 client/proxy
-      /store         → Postgres access layer
-    /migrations     → SQL migrations
-  /docker-compose.yml
+      /ws           → WebSocket hub, client, protocol      [exists]
+      /api          → REST handlers (auth, rooms, questions)   [planned]
+      /judge0       → Judge0 client/proxy                      [planned]
+      /store        → Postgres access layer                    [planned]
+    /migrations     → SQL migrations                           [planned]
+  /docker-compose.yml                                          [planned]
   CLAUDE.md
 ```
+
+## Running Locally
+
+```bash
+# backend — WebSocket hub on :8080 (override with ADDR)
+cd backend && go run ./cmd/server
+go test ./...            # -race needs CGO_ENABLED=1 and gcc on PATH
+
+# frontend
+cd web && npm run dev
+```
+
+Health check: `GET /healthz`. WebSocket: `GET /ws`.
+
+## WebSocket Protocol
+
+One JSON envelope in both directions, so the client only ever parses one shape:
+
+| Type | Direction | Payload | Meaning |
+|---|---|---|---|
+| `snapshot` | server → client | `text` | Full document, sent once on join so late joiners start in sync |
+| `edit` | both | `text` | Full document after an edit. Server relays to everyone **except** the author |
+| `presence` | server → client | `clients` | Number of clients currently in the room |
+
+Edits carry the **whole document**, not a diff. That is deliberate: the hub
+goroutine serialises them, so last-write-wins is well defined without OT.
+Revisit only if document size actually becomes a problem — not before.
 
 ## Conventions
 
@@ -94,4 +123,28 @@ Each active interview room has exactly one hub goroutine that owns the document 
 
 ## Current Status
 
-Project scaffolding stage. Nothing built yet — starting with step 1 of the build order (Go WebSocket hub, single room).
+**Build order step 1 is done: the single-room Go WebSocket hub.**
+
+- `internal/ws/hub.go` — the hub goroutine. Sole owner of `clients` and
+  `document`; no mutex anywhere, by design. A client that fills its send
+  buffer is dropped rather than allowed to block the room.
+- `internal/ws/client.go` — one read pump and one write pump per connection,
+  which is what keeps us inside gorilla's one-reader/one-writer rule.
+  Ping/pong keepalive, read limit, write deadlines.
+- `internal/ws/handler.go` — upgrade endpoint. `CheckOrigin` currently allows
+  everything; tighten it once there are real sessions.
+- `internal/ws/hub_test.go` — covers snapshot-on-join, author exclusion,
+  presence counting, and concurrent writers converging.
+
+Frontend is further along than the roadmap implies: the marketing site
+(Nav/Hero/Features/Pricing/FAQ/Footer) is built, and `/room/[roomId]` renders
+Monaco with a language picker and an output pane. Product name is
+**Panelist**.
+
+**Not yet wired:** the room page does not open a WebSocket — Monaco is
+uncontrolled (`defaultValue`, no `onChange`). `handleRun` in
+`components/RoomEditor.tsx` is a `setTimeout` returning fake output; there is
+no Judge0 and no proxy. Presence avatars are hardcoded decoration.
+
+**Next:** step 2 (map of room ID → hub, so `/room/[roomId]` means something),
+then step 3 (wire Monaco to the socket).
