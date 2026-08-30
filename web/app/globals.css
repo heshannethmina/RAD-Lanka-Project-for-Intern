@@ -210,6 +210,25 @@ body {
   border-color: var(--line-strong);
 }
 
+/* Shared mouse pointer.
+
+   The fade is CSS rather than a timer in React: a pointer that stops moving
+   should quietly disappear, and restarting the animation by changing the
+   element's key means no state, no effect, and no re-render per mouse move. */
+@keyframes pointer-fade {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.pointer-ghost {
+  animation: pointer-fade 5s ease-out forwards;
+}
+
 /* ------------------------------------------------------------------------
    Forms
    ------------------------------------------------------------------------ */

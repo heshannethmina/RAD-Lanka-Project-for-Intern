@@ -38,7 +38,10 @@ const MIN_AWAY_MS = 1500;
 
 export function useActivityReporter(
   enabled: boolean,
-  report: (kind: ActivityKind, extra?: { ms?: number; lines?: number }) => void,
+  report: (
+    kind: ActivityKind,
+    extra?: { ms?: number; lines?: number; text?: string },
+  ) => void,
 ) {
   // Held in a ref so the effect does not re-subscribe when the callback
   // identity changes on a re-render.

@@ -3,6 +3,7 @@ package ws
 import (
 	"encoding/json"
 	"log"
+	"time"
 )
 
 // inbound pairs a raw frame with the client that sent it, so the hub can
@@ -34,6 +35,9 @@ type Hub struct {
 	// interviewer's browser so that reloading the page does not reset it, and
 	// so a second interviewer joining sees the same numbers.
 	activity ActivitySummary
+	// activityLog is the bounded timeline behind the tally. Ephemeral, like
+	// the document: it lives as long as the room and is never written down.
+	activityLog []ActivityEvent
 	// presenceDirty means the client set changed and the room has not been
 	// told yet. Set it instead of broadcasting inline: a drop can happen
 	// deep inside a broadcast's range loop, and re-entering broadcast from
@@ -81,13 +85,20 @@ func (h *Hub) Run() {
 			// A late joiner needs the current document before anything else,
 			// otherwise it would sit on an empty buffer until someone types.
 			summary := h.activity
-			h.sendTo(c, Message{
+			snap := Message{
 				Type:     TypeSnapshot,
 				Text:     h.document,
 				Prompt:   h.prompt,
 				Role:     string(c.role),
 				Activity: &summary,
-			})
+			}
+			// The log goes to interviewers only. A candidate has no business
+			// reading the record being kept about them mid-interview, and it
+			// would only distract from the question.
+			if c.role == RoleInterviewer {
+				snap.Events = append([]ActivityEvent(nil), h.activityLog...)
+			}
+			h.sendTo(c, snap)
 			h.presenceDirty = true
 			log.Printf("ws: %s: client joined (%d in room)", h.roomID, len(h.clients))
 
@@ -154,7 +165,7 @@ func (h *Hub) apply(in inbound) {
 		if in.client.role != RoleCandidate {
 			return
 		}
-		h.recordActivity(msg)
+		event := h.recordActivity(msg)
 		summary := h.activity
 		h.broadcast(Message{
 			Type:     TypeActivity,
@@ -162,7 +173,18 @@ func (h *Hub) apply(in inbound) {
 			Lines:    msg.Lines,
 			Ms:       msg.Ms,
 			Activity: &summary,
+			Event:    &event,
 		}, in.client)
+
+	case TypePointer:
+		// Relayed untouched and never stored. Both roles may point; it is a
+		// gesture, not a permission. Out-of-range values are dropped rather
+		// than clamped, so a bad client cannot park a cursor off-screen where
+		// the other person cannot see what is happening.
+		if msg.X < 0 || msg.X > 1 || msg.Y < 0 || msg.Y > 1 {
+			return
+		}
+		h.broadcast(Message{Type: TypePointer, X: msg.X, Y: msg.Y, Role: string(in.client.role)}, in.client)
 
 	case TypeResult:
 		// Relayed, not stored. A run result is a moment, not part of the
@@ -187,7 +209,32 @@ func (h *Hub) apply(in inbound) {
 // make that measurement meaningless. A candidate could of course under-report,
 // but a candidate who is editing the payload is past what this feature claims
 // to catch.
-func (h *Hub) recordActivity(msg Message) {
+func (h *Hub) recordActivity(msg Message) ActivityEvent {
+	event := ActivityEvent{
+		Kind: msg.Kind,
+		// Stamped here rather than trusting the client: this is a record
+		// somebody may rely on, and the browser's clock is not ours.
+		At:    time.Now().UnixMilli(),
+		Lines: msg.Lines,
+		Ms:    msg.Ms,
+	}
+
+	if msg.Kind == ActivityPaste {
+		event.Text = msg.Text
+		if len(event.Text) > MaxPasteChars {
+			event.Text = event.Text[:MaxPasteChars]
+			event.Truncated = true
+		}
+	}
+
+	// Oldest out first. Kept as a plain slice rather than a ring buffer
+	// because fifty entries copied on overflow is nothing, and a ring would
+	// have to be unrolled every time a snapshot is built.
+	h.activityLog = append(h.activityLog, event)
+	if len(h.activityLog) > MaxActivityEvents {
+		h.activityLog = h.activityLog[len(h.activityLog)-MaxActivityEvents:]
+	}
+
 	switch msg.Kind {
 	case ActivityAway:
 		// Guarded so a duplicate "away" — visibilitychange and blur can both
@@ -206,6 +253,7 @@ func (h *Hub) recordActivity(msg Message) {
 	case ActivityPaste:
 		h.activity.PasteCount++
 	}
+	return event
 }
 
 // broadcast sends msg to every client except skip, which may be nil.

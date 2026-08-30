@@ -51,6 +51,18 @@ const (
 	// The running totals live in the hub rather than in the interviewer's
 	// browser, so reloading the page does not lose the tally.
 	TypeActivity MessageType = "activity"
+
+	// TypePointer carries where somebody's mouse is, so the other person can
+	// see what they are pointing at — "this line here" is most of what gets
+	// said in an interview, and without a shared pointer it has to be typed.
+	//
+	// Coordinates are fractions of the viewport, not pixels: the two people
+	// have different window sizes, and a pixel position would land somewhere
+	// else on the other screen.
+	//
+	// Not stored. A pointer position is stale the instant it arrives, so
+	// there is nothing sensible to put in a snapshot.
+	TypePointer MessageType = "pointer"
 )
 
 // Activity kinds, sent by the candidate's client.
@@ -64,6 +76,39 @@ const (
 	// pasted block of code is worth an interviewer's attention.
 	ActivityPaste = "paste"
 )
+
+// MaxPasteChars bounds how much of a pasted block is kept and relayed.
+//
+// Enough to recognise a pasted solution, short enough that a room holding
+// fifty of them stays small. Enforced on the server as well as the client,
+// because the client's copy is a courtesy and this one is the guarantee.
+const MaxPasteChars = 2000
+
+// MaxActivityEvents caps the log a room keeps.
+//
+// Bounded because the hub holds it in memory for the room's lifetime, and an
+// interview that produces more than this has already told the interviewer
+// what they needed to know.
+const MaxActivityEvents = 50
+
+// ActivityEvent is one thing that happened, kept so the interviewer sees a
+// timeline rather than only a running count — and so a reload does not lose
+// what came before it.
+type ActivityEvent struct {
+	Kind string `json:"kind"`
+	// At is milliseconds since the epoch, stamped by the server. The client's
+	// clock is not trustworthy for ordering a record somebody may rely on.
+	At int64 `json:"at"`
+	// Lines and Ms carry whatever the kind needs.
+	Lines int `json:"lines,omitempty"`
+	Ms    int `json:"ms,omitempty"`
+	// Text is the pasted content, truncated to MaxPasteChars. Present on
+	// paste events only — nothing else captures what the candidate typed.
+	Text string `json:"text,omitempty"`
+	// Truncated marks Text as cut short, so the UI can say so rather than
+	// letting an interviewer read a partial paste as the whole thing.
+	Truncated bool `json:"truncated,omitempty"`
+}
 
 // ActivitySummary is the running tally an interviewer sees.
 //
@@ -110,4 +155,13 @@ type Message struct {
 	// that carries no tally omits the field rather than sending zeroes that
 	// would read as "nothing has happened".
 	Activity *ActivitySummary `json:"activity,omitempty"`
+	// Event is the single thing that just happened, on TypeActivity.
+	Event *ActivityEvent `json:"event,omitempty"`
+	// X and Y are fractions of the viewport, 0..1, on TypePointer.
+	X float64 `json:"x,omitempty"`
+	Y float64 `json:"y,omitempty"`
+	// Events is the log so far, on TypeSnapshot. Sent to interviewers only:
+	// a candidate has no business reading the record kept about them mid
+	// interview, and it would be a distraction from the question.
+	Events []ActivityEvent `json:"events,omitempty"`
 }

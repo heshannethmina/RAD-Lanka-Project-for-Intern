@@ -197,7 +197,8 @@ One JSON envelope in both directions, so the client only ever parses one shape:
 | `presence` | server → client | `clients` | Number of clients currently in the room |
 | `result` | both | `text`, `failed` | Output of a run. Relayed to everyone **except** the author, who already has it |
 | `prompt` | both | `prompt` | The interview question. Accepted from an **interviewer only**; room state, so it is in the snapshot |
-| `activity` | both | `kind`, `lines`, `ms`, `activity` | Candidate left, returned, or pasted. Accepted from a **candidate only**; the tally rides along |
+| `activity` | both | `kind`, `lines`, `ms`, `text`, `activity`, `event` | Candidate left, returned, or pasted. Accepted from a **candidate only**; the tally and the new event ride along |
+| `pointer` | both | `x`, `y`, `role` | Mouse position as a fraction of the viewport. Relayed, never stored |
 
 Edits carry the **whole document**, not a diff. That is deliberate: the hub
 goroutine serialises them, so last-write-wins is well defined without OT.
@@ -623,7 +624,7 @@ What is collected, and nothing else:
 | Signal | Source |
 |---|---|
 | Left the tab / came back, with duration | `visibilitychange` and window `blur` |
-| Pasted into the editor, with line count | Monaco `onDidPaste` |
+| Pasted into the editor, with line count **and the pasted text** | Monaco `onDidPaste` |
 
 **Aggregates, not a stream.** No keystroke or mouse logging. Not because it is
 hard, but because "candidate pressed 1,847 keys" answers no question, while
@@ -653,7 +654,28 @@ Three things that are load-bearing:
   meaningless across a reconnect. A candidate could under-report, but one who
   is editing the payload is already past what this claims to catch.
 
-**The candidate always sees a banner saying what is tracked.** That is the
+**The pasted text itself is captured**, capped at `MaxPasteChars` (2000) and
+flagged `truncated` when cut — an interviewer must not read a fragment as the
+whole paste. It is read back out of the Monaco model rather than the clipboard:
+no permission prompt, and it captures what actually landed in the document.
+A count alone was useless in practice; "pasted 12 lines" does not say whether
+it was a test case or a finished solution.
+
+The hub keeps a bounded log (`MaxActivityEvents`, 50) with **server-stamped**
+times — the browser's clock is not ours to trust for a record somebody may rely
+on. The log goes to **interviewers only**: a candidate has no business reading
+the record being kept about them mid-interview.
+
+The interviewer reads it in an **Activity tab** beside Prompt, not a badge. The
+first attempt was a pill in the top bar and it was missed entirely — too small,
+wedged between the avatars and the Run button, and `hidden md:inline-flex` on
+top of that. Only "Away" now shows in the bar, because that is the one state
+worth seeing without looking.
+
+**The candidate always sees a banner saying what is tracked**, and it names the
+paste capture explicitly — collecting content while disclosing only "when you
+paste" would be the kind of half-truth that makes the whole feature
+indefensible. That is the
 feature, not a compliance checkbox: someone who knows the interviewer can see
 tab switches does not switch, so visible monitoring *prevents* what silent
 monitoring merely catches. It also gives them standing to explain a false
@@ -661,6 +683,27 @@ positive rather than being quietly marked down for one.
 
 Interviewer activity is never relayed — it is their own business, and it would
 put noise in front of the person meant to be reading the signal.
+
+### Shared pointers
+
+`components/PointerLayer.tsx` shows the other person's mouse. "This line here"
+is most of what gets said in an interview, and without it that has to be typed.
+
+- **Off by default**, toggled in the top bar. A cursor drifting across the
+  screen while somebody is thinking is a real distraction; it earns its place
+  when two people are looking at the same code, not the rest of the time.
+- **Fractions of the viewport, not pixels.** The two people have different
+  window sizes, so a pixel position lands somewhere else on the other screen.
+- **Throttled to 60ms.** Mouse moves fire faster than anyone can see, and every
+  frame passes through the room's single hub goroutine — this is about not
+  flooding the room, not about bytes.
+- **Never stored.** A pointer is stale the instant it arrives, so there is
+  nothing sensible to put in a snapshot. Out-of-range values are dropped rather
+  than clamped, so a bad client cannot park a cursor off-screen.
+- **The fade is CSS**, restarted by changing the element's key. No timer, no
+  state, no re-render per mouse move — see `.pointer-ghost` in `globals.css`.
+- `pointer-events-none` throughout. This floats over Monaco, and a layer that
+  swallowed clicks would make the room unusable.
 
 ### Still stubbed
 - Nothing of the *document* persists. A room's text lives only in its hub

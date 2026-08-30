@@ -18,6 +18,21 @@ export type ActivitySummary = {
 
 export type ActivityKind = "away" | "back" | "paste";
 
+/** Mirrors ws.ActivityEvent. */
+export type ActivityEvent = {
+  kind: ActivityKind;
+  /** Milliseconds since the epoch, stamped by the server, not the browser. */
+  at: number;
+  lines?: number;
+  ms?: number;
+  /** The pasted text, on paste events. Truncated server-side. */
+  text?: string;
+  truncated?: boolean;
+};
+
+/** Where somebody's mouse is, as a fraction of their viewport. */
+export type Pointer = { x: number; y: number; role: Role };
+
 type ServerMessage =
   | {
       type: "snapshot";
@@ -25,6 +40,7 @@ type ServerMessage =
       prompt?: string;
       role?: string;
       activity?: ActivitySummary;
+      events?: ActivityEvent[];
     }
   | { type: "edit"; text?: string }
   | { type: "presence"; clients?: number }
@@ -36,7 +52,9 @@ type ServerMessage =
       lines?: number;
       ms?: number;
       activity?: ActivitySummary;
-    };
+      event?: ActivityEvent;
+    }
+  | { type: "pointer"; x?: number; y?: number; role?: string };
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080";
 
@@ -54,13 +72,20 @@ type Handlers = {
    * Delivered with the snapshot because both are room state a joiner needs
    * before it can render anything correctly.
    */
-  onJoin: (prompt: string, role: Role, activity: ActivitySummary | null) => void;
+  onJoin: (
+    prompt: string,
+    role: Role,
+    activity: ActivitySummary | null,
+    events: ActivityEvent[],
+  ) => void;
   /**
    * The candidate left, returned, or pasted. Carries the running tally, which
    * the server owns — so a reload does not reset it and the client never has
    * to accumulate anything itself.
    */
-  onActivity: (kind: ActivityKind, summary: ActivitySummary, lines: number) => void;
+  onActivity: (summary: ActivitySummary, event: ActivityEvent) => void;
+  /** Somebody moved their mouse. Stale immediately; never stored. */
+  onPointer: (pointer: Pointer) => void;
   /** The interviewer changed the question. */
   onPrompt: (prompt: string) => void;
   /** Full document after somebody else's edit. */
@@ -145,6 +170,19 @@ export function useRoomSocket(
     [],
   );
 
+  /**
+   * Publishes the local mouse position as a fraction of the viewport.
+   *
+   * Fractions rather than pixels because the two people have different window
+   * sizes, and a pixel position would land somewhere else on the other screen.
+   */
+  const sendPointer = useCallback((x: number, y: number) => {
+    const ws = socketRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "pointer", x, y }));
+    }
+  }, []);
+
   const sendResult = useCallback((text: string, failed: boolean) => {
     const ws = socketRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
@@ -197,6 +235,7 @@ export function useRoomSocket(
               msg.prompt ?? "",
               msg.role === "candidate" ? "candidate" : "interviewer",
               msg.activity ?? null,
+              msg.events ?? [],
             );
             handlersRef.current.onSnapshot(msg.text ?? "", sendEdit);
             break;
@@ -213,9 +252,16 @@ export function useRoomSocket(
             handlersRef.current.onPrompt(msg.prompt ?? "");
             break;
           case "activity":
-            if (msg.activity && msg.kind) {
-              handlersRef.current.onActivity(msg.kind, msg.activity, msg.lines ?? 0);
+            if (msg.activity && msg.event) {
+              handlersRef.current.onActivity(msg.activity, msg.event);
             }
+            break;
+          case "pointer":
+            handlersRef.current.onPointer({
+              x: msg.x ?? 0,
+              y: msg.y ?? 0,
+              role: msg.role === "interviewer" ? "interviewer" : "candidate",
+            });
             break;
         }
       };
@@ -242,5 +288,13 @@ export function useRoomSocket(
     };
   }, [roomId, token, sendEdit]);
 
-  return { status, peers, sendEdit, sendResult, sendPrompt, sendActivity };
+  return {
+    status,
+    peers,
+    sendEdit,
+    sendResult,
+    sendPrompt,
+    sendActivity,
+    sendPointer,
+  };
 }

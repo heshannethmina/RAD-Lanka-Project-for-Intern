@@ -6,11 +6,15 @@ import Editor, { type Monaco } from "@monaco-editor/react";
 import { applyRemoteText, type CodeEditor } from "@/lib/applyRemoteText";
 import {
   useRoomSocket,
+  type ActivityEvent,
   type ActivitySummary,
   type ConnectionStatus,
+  type Pointer,
   type Role,
 } from "@/lib/useRoomSocket";
-import { formatAway, useActivityReporter } from "@/lib/useActivityReporter";
+import ActivityPanel from "./ActivityPanel";
+import PointerLayer, { usePointerBroadcast } from "./PointerLayer";
+import { useActivityReporter } from "@/lib/useActivityReporter";
 import { api } from "@/lib/api";
 import SplitPane from "./SplitPane";
 import { formatRunResult, isFailure, runCode, RunError } from "@/lib/runCode";
@@ -96,58 +100,6 @@ function Spinner() {
 }
 
 /**
- * What the interviewer sees: aggregates, not a feed.
- *
- * Worded as observation rather than accusation on purpose. Switching tabs is
- * not cheating — plenty of interviewers expect a candidate to read
- * documentation — and a badge that says "3 tab switches" invites a conclusion
- * the data does not support. It reports what happened and leaves the judgement
- * to the person conducting the interview.
- */
-function ActivityBadge({ summary }: { summary: ActivitySummary }) {
-  const quiet =
-    summary.away_count === 0 && summary.paste_count === 0 && !summary.away;
-
-  if (quiet) return null;
-
-  const parts: string[] = [];
-  if (summary.away_count > 0) {
-    parts.push(
-      `Left the tab ${summary.away_count} times` +
-        (summary.away_ms > 0 ? ` (${formatAway(summary.away_ms)} total)` : ""),
-    );
-  }
-  if (summary.paste_count > 0) {
-    parts.push(`Pasted ${summary.paste_count} times`);
-  }
-
-  return (
-    <span
-      title={`${parts.join(" · ")}. A signal, not proof — people switch tabs for documentation.`}
-      className={[
-        "hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium md:inline-flex",
-        summary.away
-          ? "border-[#F5C4A0] bg-[#FFF7ED] text-[#9A5B1E]"
-          : "border-line bg-bg-subtle text-ink-muted",
-      ].join(" ")}
-    >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${summary.away ? "bg-[#D97706]" : "bg-ink-muted"}`}
-      />
-      {summary.away ? "Away now" : null}
-      {summary.away_count > 0 && (
-        <span>
-          {summary.away ? "·" : ""} {summary.away_count} away
-        </span>
-      )}
-      {summary.paste_count > 0 && (
-        <span>· {summary.paste_count} paste{summary.paste_count === 1 ? "" : "s"}</span>
-      )}
-    </span>
-  );
-}
-
-/**
  * What the candidate sees, always, for the whole interview.
  *
  * The disclosure is the feature. A candidate who knows the interviewer can see
@@ -165,8 +117,9 @@ function MonitoringNotice() {
         <circle cx="8" cy="4.9" r="0.85" fill="currentColor" />
       </svg>
       <span>
-        Your interviewer can see when you leave this tab and when you paste
-        code. Nothing else about your device is recorded.
+        Your interviewer can see when you leave this tab, and can see any code
+        you paste in. Nothing else about your device or your typing is
+        recorded.
       </span>
     </div>
   );
@@ -213,13 +166,24 @@ export default function RoomEditor({
   const [role, setRole] = useState<Role>("candidate");
   const [prompt, setPrompt] = useState("");
   const [activity, setActivity] = useState<ActivitySummary | null>(null);
+  const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const [pointer, setPointer] = useState<Pointer | null>(null);
+  // Off by default: a cursor drifting across the screen while somebody is
+  // trying to think is a real distraction. It earns its place when two people
+  // are looking at the same code, not the rest of the time.
+  const [pointersOn, setPointersOn] = useState(false);
+  // Which of the two bottom-right tabs is showing.
+  const [sideTab, setSideTab] = useState<"prompt" | "activity">("prompt");
 
   // onDidPaste is registered once when Monaco mounts, so it would otherwise
   // capture the role and sender from that first render — before the snapshot
   // has said which side of the interview this is.
   const roleRef = useRef<Role>("candidate");
   const sendActivityRef = useRef<
-    (kind: "away" | "back" | "paste", extra?: { ms?: number; lines?: number }) => void
+    (
+      kind: "away" | "back" | "paste",
+      extra?: { ms?: number; lines?: number; text?: string },
+    ) => void
   >(() => {});
   const [failed, setFailed] = useState(false);
   const [running, setRunning] = useState(false);
@@ -249,7 +213,15 @@ export default function RoomEditor({
     }
   }, []);
 
-  const { status, peers, sendEdit, sendResult, sendPrompt, sendActivity } = useRoomSocket(roomId, token, {
+  const {
+    status,
+    peers,
+    sendEdit,
+    sendResult,
+    sendPrompt,
+    sendActivity,
+    sendPointer,
+  } = useRoomSocket(roomId, token, {
     onSnapshot: (text, send) => {
       if (text !== "") {
         write(text);
@@ -260,12 +232,19 @@ export default function RoomEditor({
       // own editor.
       send(editorRef.current?.getValue() ?? STARTER);
     },
-    onJoin: (roomPrompt, joinedAs, tally) => {
+    onJoin: (roomPrompt, joinedAs, tally, log) => {
       setRole(joinedAs);
       setPrompt(roomPrompt);
       setActivity(tally);
+      setEvents(log);
     },
-    onActivity: (_kind, summary) => setActivity(summary),
+    onActivity: (summary, event) => {
+      setActivity(summary);
+      // Bounded here too. The server caps what it keeps; this keeps a long
+      // interview from growing the tab's memory without limit.
+      setEvents((prev) => [...prev, event].slice(-100));
+    },
+    onPointer: setPointer,
     onPrompt: setPrompt,
     onEdit: write,
     // Someone else pressed Run. Show what they got, so an interviewer can see
@@ -321,6 +300,9 @@ export default function RoomEditor({
   // drops activity frames from an interviewer regardless, so this is about not
   // sending pointless traffic rather than about enforcement.
   useActivityReporter(role === "candidate" && status === "open", sendActivity);
+
+  // Both sides may point; it is a gesture, not a permission.
+  usePointerBroadcast(pointersOn && status === "open", sendPointer);
 
   useEffect(() => {
     roleRef.current = role;
@@ -384,13 +366,29 @@ export default function RoomEditor({
     // Reported by the candidate's client only. Guarded with optional chaining
     // because onDidPaste is not part of the editor interface this project
     // types against, and a Monaco upgrade renaming it must not crash the room.
+    type PasteRange = {
+      startLineNumber: number;
+      startColumn: number;
+      endLineNumber: number;
+      endColumn: number;
+    };
     const withPaste = editor as unknown as {
-      onDidPaste?: (cb: (e: { range: { startLineNumber: number; endLineNumber: number } }) => void) => void;
+      onDidPaste?: (cb: (e: { range: PasteRange }) => void) => void;
     };
     withPaste.onDidPaste?.((e) => {
       if (roleRef.current !== "candidate") return;
       const lines = e.range.endLineNumber - e.range.startLineNumber + 1;
-      sendActivityRef.current("paste", { lines });
+      // Read the pasted span back out of the model rather than the clipboard:
+      // no permission prompt, and it captures what actually landed in the
+      // document, which is what the interviewer is looking at anyway. The
+      // server truncates; this bound just keeps the frame small.
+      let text = "";
+      try {
+        text = editor.getModel()?.getValueInRange(e.range).slice(0, 4000) ?? "";
+      } catch {
+        // A model swapped out mid-paste is not worth failing the report over.
+      }
+      sendActivityRef.current("paste", { lines, text });
     });
     if (pendingText.current !== null) {
       applyingRemote.current = true;
@@ -509,7 +507,40 @@ export default function RoomEditor({
 
           <PeerAvatars peers={peers} />
 
-          {role === "interviewer" && activity && <ActivityBadge summary={activity} />}
+          {/* Only the state that needs to be seen without looking: away now.
+              The detail lives in the Activity tab, where there is room for it. */}
+          {role === "interviewer" && activity?.away && (
+            <span className="hidden items-center gap-1.5 rounded-full border border-[#F5C4A0] bg-[#FFF7ED] px-2.5 py-1 text-[11px] font-medium text-[#9A5B1E] sm:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#D97706]" />
+              Away
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setPointersOn((on) => !on)}
+            aria-pressed={pointersOn}
+            title={
+              pointersOn
+                ? "Stop sharing mouse pointers"
+                : "Share mouse pointers, so you can point at code"
+            }
+            className={[
+              "hidden h-9 items-center gap-1.5 rounded-lg border px-2.5 text-[13px] transition-colors sm:inline-flex",
+              pointersOn
+                ? "border-accent bg-accent-wash text-accent"
+                : "border-line bg-white text-ink-muted hover:border-line-strong hover:text-ink",
+            ].join(" ")}
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
+              <path
+                d="M3 2l9 5.5-4 1-1.8 4z"
+                fill="currentColor"
+                stroke="none"
+              />
+            </svg>
+            Pointer
+          </button>
 
           <span className="h-5 w-px bg-line" />
 
@@ -563,6 +594,8 @@ export default function RoomEditor({
           </button>
         </div>
       </header>
+
+      <PointerLayer pointer={pointer} enabled={pointersOn} />
 
       {role === "candidate" && <MonitoringNotice />}
 
@@ -643,12 +676,57 @@ export default function RoomEditor({
             }
             second={
               <section className="flex h-full min-h-0 flex-col p-4">
-                <div className="flex shrink-0 items-baseline justify-between gap-3">
-                  <h2 className="text-[13px] font-semibold text-ink">Prompt</h2>
+                {/*
+                  Tabs rather than a fourth pane: three horizontal dividers in
+                  a laptop-height window leaves each panel too short to read.
+                  The candidate has one tab, so no tab strip is drawn for them.
+                */}
+                <div className="flex shrink-0 items-center justify-between gap-3">
+                  {role === "interviewer" ? (
+                    <div className="flex items-center gap-1" role="tablist">
+                      {(["prompt", "activity"] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          role="tab"
+                          aria-selected={sideTab === tab}
+                          onClick={() => setSideTab(tab)}
+                          className={[
+                            "rounded-md px-2 py-1 text-[13px] font-semibold transition-colors",
+                            sideTab === tab
+                              ? "bg-bg-sunken text-ink"
+                              : "text-ink-muted hover:text-ink",
+                          ].join(" ")}
+                        >
+                          {tab === "prompt" ? "Prompt" : "Activity"}
+                          {tab === "activity" &&
+                            activity &&
+                            activity.away_count + activity.paste_count > 0 && (
+                              <span className="ml-1.5 text-[11px] font-normal text-ink-muted">
+                                {activity.away_count + activity.paste_count}
+                              </span>
+                            )}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <h2 className="text-[13px] font-semibold text-ink">Prompt</h2>
+                  )}
+
                   <span className="text-[11px] text-ink-muted">
-                    {role === "interviewer" ? "Editable — the candidate sees changes live" : "Set by your interviewer"}
+                    {role !== "interviewer"
+                      ? "Set by your interviewer"
+                      : sideTab === "prompt"
+                        ? "The candidate sees changes live"
+                        : null}
                   </span>
                 </div>
+
+                {role === "interviewer" && sideTab === "activity" ? (
+                  <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-lg border border-line bg-bg-subtle p-3">
+                    <ActivityPanel summary={activity} events={events} />
+                  </div>
+                ) : (
+                <>
 
                 {/*
                   The interviewer gets a textarea, the candidate gets text.
@@ -677,6 +755,8 @@ export default function RoomEditor({
                       </p>
                     )}
                   </div>
+                )}
+                </>
                 )}
               </section>
             }
