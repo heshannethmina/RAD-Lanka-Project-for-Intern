@@ -67,16 +67,20 @@ export default function Nav() {
 
         <div className="flex items-center gap-2 sm:gap-5">
           <Link
-            href="/room/demo"
+            href="/login"
             className="hidden text-[14px] font-medium text-ink-body transition-colors hover:text-ink sm:block"
           >
             Sign in
           </Link>
+          {/* Was "Try live demo" pointing at /room/demo. Rooms now require
+              either an account or an invite link, so an anonymous demo room no
+              longer exists — the honest CTA is to sign up. Restore a demo only
+              by building one that is genuinely open. */}
           <Link
-            href="/room/demo"
+            href="/register"
             className="btn-primary h-9 px-4 text-[14px]"
           >
-            Try live demo
+            Get started
           </Link>
 
           <button
@@ -127,7 +131,7 @@ export default function Nav() {
               </a>
             ))}
             <Link
-              href="/room/demo"
+              href="/login"
               onClick={() => setMenuOpen(false)}
               className="py-2.5 text-[15px] font-medium text-ink-body transition-colors hover:text-ink sm:hidden"
             >

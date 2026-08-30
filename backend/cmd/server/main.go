@@ -13,6 +13,7 @@ import (
 
 	"github.com/heshannethmina/interview-platform/backend/internal/api"
 	"github.com/heshannethmina/interview-platform/backend/internal/judge0"
+	"github.com/heshannethmina/interview-platform/backend/internal/store"
 	"github.com/heshannethmina/interview-platform/backend/internal/ws"
 )
 
@@ -27,12 +28,33 @@ func env(key, fallback string) string {
 func main() {
 	addr := env("ADDR", ":8080")
 	judgeURL := env("JUDGE0_URL", "http://localhost:2358")
-	// "*" is acceptable only while the API carries no credentials. Narrow it
-	// alongside ws.CheckOrigin when auth lands.
+	// A comma-separated allowlist. "*" is local development only: the API now
+	// carries bearer tokens, so a deployment must name its web origin here.
+	// The same value gates WebSocket upgrades, which CORS does not cover.
 	corsOrigin := env("CORS_ORIGIN", "*")
+	databaseURL := env("DATABASE_URL", "postgres://syncr:syncrdev@localhost:5433/syncr")
+
+	// The application database — users, sessions, rooms. Not Judge0's, which
+	// is reachable from the sandbox and holds only submissions.
+	ctx := context.Background()
+	db, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		log.Fatalf("server: database: %v", err)
+	}
+	defer db.Close()
+
+	// Migrations run at startup rather than as a deploy step: the schema is
+	// small, they are idempotent, and it removes an ordering mistake that
+	// would otherwise be possible on every deploy.
+	migrateCtx, cancelMigrate := context.WithTimeout(ctx, 30*time.Second)
+	if err := db.Migrate(migrateCtx); err != nil {
+		cancelMigrate()
+		log.Fatalf("server: migrate: %v", err)
+	}
+	cancelMigrate()
 
 	// One hub goroutine per room, created on first join and shut down when
-	// the last client leaves. Still no auth: anyone with a room ID is in.
+	// the last client leaves.
 	rooms := ws.NewRegistry()
 	go rooms.Run()
 
@@ -40,15 +62,40 @@ func main() {
 	// never runs submitted code itself.
 	judge := judge0.New(judgeURL)
 
+	// Public: no session required.
 	apiMux := http.NewServeMux()
+	apiMux.Handle("POST /api/auth/register", api.Register(db))
+	apiMux.Handle("POST /api/auth/login", api.Login(db))
+	apiMux.Handle("POST /api/auth/logout", api.Logout(db))
+	// The candidate's half of a shareable link: an invite token, no account.
+	apiMux.Handle("GET /api/rooms/{roomID}/join", api.JoinRoom(db))
 	apiMux.Handle("POST /api/run", api.Run(judge))
+
+	// Everything an interviewer does with their own rooms.
+	authed := http.NewServeMux()
+	authed.Handle("GET /api/me", api.Me())
+	authed.Handle("POST /api/rooms", api.CreateRoom(db))
+	authed.Handle("GET /api/rooms", api.ListRooms(db))
+	authed.Handle("GET /api/rooms/{roomID}", api.GetRoom(db))
+	authed.Handle("DELETE /api/rooms/{roomID}", api.CloseRoom(db))
+	authed.Handle("POST /api/rooms/{roomID}/invite", api.RotateInvite(db))
+	// ServeMux prefers the more specific pattern, so the public
+	// /api/rooms/{roomID}/join above still wins over this catch-all.
+	apiMux.Handle("/api/me", api.RequireAuth(db, authed))
+	apiMux.Handle("/api/rooms", api.RequireAuth(db, authed))
+	apiMux.Handle("/api/rooms/{roomID}", api.RequireAuth(db, authed))
+	apiMux.Handle("/api/rooms/{roomID}/invite", api.RequireAuth(db, authed))
+
+	// WebSocket upgrades ignore CORS entirely, so this is the only thing
+	// stopping a hostile page from opening a socket in a victim's browser.
+	ws.AllowOrigins(corsOrigin)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("ok"))
 	})
-	mux.Handle("GET /ws/{roomID}", ws.Handler(rooms))
+	mux.Handle("GET /ws/{roomID}", ws.Handler(rooms, api.RoomAuthorizer(db)))
 	// Wrapped rather than mounted directly so the CORS preflight is answered
 	// for every /api/ route, including ones that do not exist yet.
 	mux.Handle("/api/", api.CORS(corsOrigin, apiMux))

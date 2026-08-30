@@ -86,8 +86,18 @@ function Spinner() {
   );
 }
 
-export default function RoomEditor({ roomId }: { roomId: string }) {
-  const [language, setLanguage] = useState("python");
+export default function RoomEditor({
+  roomId,
+  token,
+  initialLanguage = "python",
+}: {
+  roomId: string;
+  /** Session token or invite token; RoomGate has already checked it works. */
+  token: string;
+  /** The room's own language, so both sides start on the same one. */
+  initialLanguage?: string;
+}) {
+  const [language, setLanguage] = useState(initialLanguage);
   const [output, setOutput] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [running, setRunning] = useState(false);
@@ -117,7 +127,7 @@ export default function RoomEditor({ roomId }: { roomId: string }) {
     }
   }, []);
 
-  const { status, peers, sendEdit } = useRoomSocket(roomId, {
+  const { status, peers, sendEdit } = useRoomSocket(roomId, token, {
     onSnapshot: (text, send) => {
       if (text !== "") {
         write(text);

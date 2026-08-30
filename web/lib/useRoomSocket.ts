@@ -30,8 +30,23 @@ type Handlers = {
  *
  * The connection is deliberately direct to the Go backend — it does not go
  * through Next.js, which only renders the shell.
+ *
+ * `token` is either the interviewer's session token or the candidate's invite
+ * token; the server accepts both and works out which it was given. It goes in
+ * the query string because browsers cannot set headers on a WebSocket
+ * handshake. Passing null keeps the socket shut, which is what a page should
+ * do while it is still working out whether the viewer is allowed in.
+ *
+ * A rejected handshake is indistinguishable from a network failure in the
+ * browser — both surface as close code 1006 — so this hook does not try to
+ * tell them apart. The room page checks access over REST first, and by the
+ * time it opens a socket a failure really is the network.
  */
-export function useRoomSocket(roomId: string, handlers: Handlers) {
+export function useRoomSocket(
+  roomId: string,
+  token: string | null,
+  handlers: Handlers,
+) {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [peers, setPeers] = useState(1);
   const socketRef = useRef<WebSocket | null>(null);
@@ -52,6 +67,13 @@ export function useRoomSocket(roomId: string, handlers: Handlers) {
   }, []);
 
   useEffect(() => {
+    // No token yet: the caller is still resolving access. Stay closed rather
+    // than opening a socket that would only be refused.
+    if (!token) {
+      setStatus("connecting");
+      return;
+    }
+
     let disposed = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let attempt = 0;
@@ -60,7 +82,10 @@ export function useRoomSocket(roomId: string, handlers: Handlers) {
       if (disposed) return;
 
       setStatus("connecting");
-      const ws = new WebSocket(`${WS_BASE}/ws/${encodeURIComponent(roomId)}`);
+      const url =
+        `${WS_BASE}/ws/${encodeURIComponent(roomId)}` +
+        `?token=${encodeURIComponent(token!)}`;
+      const ws = new WebSocket(url);
       socketRef.current = ws;
 
       ws.onopen = () => {
@@ -109,7 +134,7 @@ export function useRoomSocket(roomId: string, handlers: Handlers) {
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [roomId, sendEdit]);
+  }, [roomId, token, sendEdit]);
 
   return { status, peers, sendEdit };
 }

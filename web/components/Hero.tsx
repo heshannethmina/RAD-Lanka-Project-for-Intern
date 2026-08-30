@@ -26,7 +26,7 @@ export default function Hero() {
 
             <div className="mt-9 flex flex-wrap items-center gap-3">
               <Link
-                href="/room/demo"
+                href="/register"
                 className="btn-primary h-12 px-6 text-[15px]"
               >
                 Start a free interview

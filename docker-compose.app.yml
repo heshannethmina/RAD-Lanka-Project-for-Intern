@@ -1,0 +1,42 @@
+# Application storage only.
+#
+# Deliberately a separate file from docker-compose.yml, which is Judge0's.
+# Judge0 brings its own Postgres; that one holds submissions and is reachable
+# from the sandbox network. This one holds users, sessions and rooms, and
+# nothing that executes untrusted code ever touches it. Keeping them in
+# separate files makes it hard to accidentally point the app at Judge0's
+# database, or to grant Judge0 a route to ours.
+#
+#   docker compose -f docker-compose.app.yml up -d
+#
+# The Go backend still runs directly (`go run ./cmd/server`), not as a service
+# here, for the same reason it is absent from the Judge0 file: it is the thing
+# being developed, and a container round-trip on every edit is friction.
+
+name: interview-platform-app
+
+services:
+  app-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: syncr
+      POSTGRES_USER: syncr
+      # Development only. The backend reads DATABASE_URL, so deployment
+      # supplies its own credentials and never sees this value.
+      POSTGRES_PASSWORD: syncrdev
+    ports:
+      # 5433, not 5432: Judge0's Postgres is not published, but a developer
+      # machine very often already has something on 5432.
+      - "5433:5432"
+    volumes:
+      - app-postgres:/var/lib/postgresql/data/
+    restart: unless-stopped
+    healthcheck:
+      # Gates `up -d --wait`, so migrations do not race the first boot.
+      test: ["CMD-SHELL", "pg_isready -U syncr -d syncr"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  app-postgres:

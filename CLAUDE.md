@@ -72,43 +72,84 @@ Go module path: `github.com/heshannethmina/interview-platform/backend`
 
 ```
 /interview-platform
-  /web              → Next.js app                          [exists]
-    /app            → routes: landing, /room/[roomId]      [exists]
-    /components     → UI, incl. RoomEditor (Monaco)        [exists]
-    /lib            → useRoomSocket, applyRemoteText       [exists]
+  /web              → Next.js app                                    [exists]
+    /app            → landing, /login, /register, /dashboard,
+                      /room/[roomId]                                [exists]
+    /components     → UI, incl. RoomEditor (Monaco), RoomGate,
+                      AuthForm, Dashboard                           [exists]
+    /lib            → api, useAuth, useRoomSocket, applyRemoteText  [exists]
   /backend          → Go backend
-    /cmd/server     → main entrypoint                      [exists]
+    /cmd/server     → main entrypoint                               [exists]
     /internal
-      /ws           → hub, registry, client, protocol      [exists]
-      /api          → REST handlers (run; auth/rooms later)   [exists]
-      /judge0       → Judge0 client/proxy                      [exists]
-      /store        → Postgres access layer                    [planned]
-    /migrations     → SQL migrations                           [planned]
-  /docker-compose.yml → Judge0 stack                           [exists]
-  /judge0.conf                                                 [exists]
+      /ws           → hub, registry, client, protocol, authorizer   [exists]
+      /api          → REST: run, auth, rooms, ws authorizer         [exists]
+      /judge0       → Judge0 client/proxy                           [exists]
+      /store        → Postgres access layer                         [exists]
+      /auth         → password + token primitives                   [exists]
+    /migrations     → SQL migrations (embedded via go:embed)        [exists]
+  /docker-compose.yml     → Judge0 stack                            [exists]
+  /docker-compose.app.yml → application Postgres                    [exists]
+  /judge0.conf                                                      [exists]
   CLAUDE.md
 ```
 
 ## Running Locally
 
 ```bash
-# Judge0 (sandboxed execution) — must be up before the Run button works
+# Judge0 (sandboxed execution) — must be up before the Run button works.
+# NOTE: on Docker Desktop for Windows every run fails with Internal Error;
+# see the Judge0 section under "Testing note". Judge0 needs a Linux host.
 docker compose up -d
 curl http://localhost:2358/about
 
-# backend — WS hub + REST on :8080
+# application database — users, sessions, rooms. Separate file, separate
+# stack, deliberately not Judge0's Postgres.
+docker compose -f docker-compose.app.yml up -d --wait
+
+# backend — WS hub + REST on :8080. Migrations run automatically at startup.
 cd backend && go run ./cmd/server
-go test ./...            # -race needs CGO_ENABLED=1 and gcc on PATH
+go test ./...
+
+# the store tests need a real Postgres and skip without this
+TEST_DATABASE_URL='postgres://syncr:syncrdev@localhost:5433/syncr' \
+  go test ./internal/store/
+# -race needs CGO_ENABLED=1 and a gcc. On this machine gcc is at
+# C:\Users\hesha\mingw64\bin and is NOT on PATH; see "Testing note" below.
+PATH="/c/Users/hesha/mingw64/bin:$PATH" CGO_ENABLED=1 \
+  CC="C:/Users/hesha/mingw64/bin/gcc.exe" go test -race ./...
 
 # frontend
 cd web && npm run dev
 ```
 
 Backend env: `ADDR` (`:8080`), `JUDGE0_URL` (`http://localhost:2358`),
-`CORS_ORIGIN` (`*`).
+`DATABASE_URL` (`postgres://syncr:syncrdev@localhost:5433/syncr`), and
+`CORS_ORIGIN` (`*`) — a comma-separated allowlist that gates **both** the REST
+CORS headers and WebSocket `CheckOrigin`. `*` is local development only.
 
-Health check: `GET /healthz`. WebSocket: `GET /ws/{roomID}`.
-Execution: `POST /api/run` with `{"language","source"}`.
+| Route | Auth | Purpose |
+|---|---|---|
+| `GET /healthz` | — | liveness |
+| `POST /api/auth/register` | — | create an interviewer, returns a token |
+| `POST /api/auth/login` | — | exchange credentials for a token |
+| `POST /api/auth/logout` | bearer | revoke the presented token |
+| `GET /api/me` | bearer | who am I |
+| `POST /api/rooms` | bearer | create a room, returns the invite **once** |
+| `GET /api/rooms` | bearer | list my rooms, newest first |
+| `GET /api/rooms/{id}` | bearer | one of my rooms |
+| `DELETE /api/rooms/{id}` | bearer | close it; keeps the record |
+| `POST /api/rooms/{id}/invite` | bearer | rotate the link, revoking the old |
+| `GET /api/rooms/{id}/join?token=` | invite | candidate's link check |
+| `POST /api/run` | — | `{"language","source"}` → Judge0 |
+| `GET /ws/{roomID}?token=` | session **or** invite | the editor socket |
+
+The socket takes its token in the query string because browsers cannot set
+headers on a WebSocket handshake. Room IDs must match `^[A-Za-z0-9_-]{1,64}$`;
+anything else is rejected with 400 before the upgrade, and the same pattern is
+a CHECK constraint on `rooms.id`.
+
+The frontend reads `NEXT_PUBLIC_WS_URL` (see `web/.env.example`), defaulting
+to `ws://localhost:8080`.
 
 The frontend reads `NEXT_PUBLIC_WS_URL` (see `web/.env.example`), defaulting
 to `ws://localhost:8080`. Room IDs must match `^[A-Za-z0-9_-]{1,64}$`;
@@ -340,18 +381,147 @@ own Postgres and Redis — unrelated to the application database that steps 5-6
 will add. The Go process never executes submitted code; if a change ever makes
 it tempting to shell out, that is the wrong turn.
 
-### Still stubbed
+### Auth and shareable links (step 5, backend done)
 
-- No auth: anyone with a room ID is in (step 5).
-- Nothing persists. A room's document lives only in its hub goroutine and dies
-  when the last client leaves — pinned by `TestReopenedRoomStartsEmpty`.
+An interview has exactly two kinds of participant, and there is no third:
+
+| | Holds | Gets in when |
+|---|---|---|
+| Interviewer | session token, from login | they **own** the room |
+| Candidate | the room's invite token | the room is still **open** |
+
+Candidates are deliberately not users. They never register, never have a
+password, and hold nothing but a link — that is the whole point of the
+shareable link, and it is why `users` has no candidate rows.
+
+**Tokens are opaque random bytes in Postgres, not JWTs.** 32 bytes from
+`crypto/rand`, stored as a SHA-256 hash. That buys real revocation: logout
+deletes a row and the token is dead immediately, where a JWT would stay valid
+until it expired. It costs one indexed lookup per request, which is nothing
+beside the socket it guards. There is no signing key to rotate or leak.
+
+Passwords go through bcrypt; tokens through SHA-256. Different jobs: a
+password is low-entropy and needs a slow hash, a 256-bit random token has
+nothing to brute-force and a fast hash keeps it off the hot path.
+
+**The session token travels in `Authorization: Bearer`, not a cookie.** A
+cookie would be HttpOnly and so safer against XSS, but the web app and the API
+are different origins in every environment — Vercel and a VPS in production,
+`:3000` and `:8080` locally — so it would need `SameSite=None; Secure`, which
+browsers refuse to send over plain http. That breaks local development
+outright. The trade is written out at the top of `internal/api/auth.go`; keep
+the XSS surface small rather than reversing it.
+
+**The invite token is shown exactly once**, at create and at rotate, because
+only its hash is stored. An interviewer who loses a link rotates it rather
+than re-reading it, and a leaked database grants entry to nothing. If that
+proves too annoying in the pilot, storing it in plaintext is a one-line schema
+change — but do it deliberately, not by accident.
+
+**404, never 403.** "Not yours" and "does not exist" answer identically, so
+someone guessing room IDs learns nothing from the difference.
+
+Login hashes against `auth.DummyPasswordHash` when the email is unknown, so a
+missing account costs the same bcrypt work as a wrong password. Without it the
+endpoint is a timing oracle over the user list.
+
+Two things that are easy to get wrong here:
+
+- **WebSocket upgrades ignore CORS entirely.** The browser sends the handshake
+  whatever the origin, so `CheckOrigin` is the only thing between a hostile
+  page and a socket opened with a victim's token. It now defaults to *deny*
+  for anything carrying an `Origin`; a server that forgets `AllowOrigins` is
+  closed to browsers rather than open to them. Requests with no `Origin` at
+  all are allowed — those are curl and the Go test suite, not the attack.
+- **`internal/ws` must not import `store`.** Authorization arrives as a
+  `ws.Authorizer` func so the hub stays a thing that moves text between
+  sockets. `api.RoomAuthorizer` is the real implementation; `ws.AllowAll` is
+  for tests and is named to look wrong in production code.
+
+Verified end to end against the live database and server: register, duplicate
+rejection (409), wrong password (401), `/api/me` with and without a token,
+room create/list/get/close, cross-account isolation (404 both ways, empty
+listing), candidate join by invite, and the socket itself — no token 401, bad
+token 401, invite 101, owner 101, other interviewer 401. Closing a room drops
+the candidate to 401 while the owner keeps 101; rotating kills the old link;
+logout kills both `/api/me` and the socket.
+
+### The web side of step 5
+
+`lib/api.ts` is the one place that talks to the REST API. The token lives in
+`localStorage` under `syncr.session`; every read and write is wrapped in
+try/catch because private mode and "block site data" *throw* rather than
+return null.
+
+`lib/useAuth.ts` resolves that token into a user by asking the server, rather
+than trusting it — it may have expired or been revoked from another device.
+Until the answer arrives the state is `loading`, and pages render nothing.
+Rendering the signed-out view first and swapping is the flash this exists to
+avoid.
+
+**`components/RoomGate.tsx` is the interesting one.** It decides who is at the
+door before any socket opens:
+
+| URL | Who | Token used |
+|---|---|---|
+| `/room/<id>?t=<invite>` | candidate | the invite from the link |
+| `/room/<id>` | interviewer | the session token in localStorage |
+
+The invite is checked *first*, so a link still works for someone who also
+happens to have an interviewer session in that browser — the link is what they
+were sent.
+
+Access is resolved over REST before connecting, and that ordering is
+load-bearing: **a refused WebSocket handshake reaches the browser as close code
+1006, identical to a dropped connection.** A socket alone cannot tell "you are
+not allowed in" from "the wifi died", so the reconnect loop would hammer a room
+the viewer will never enter, and the UI could never say why. The server still
+authorises the socket itself; the REST check is about being able to explain the
+refusal. `useRoomSocket` therefore takes a token and stays shut while it is
+null.
+
+The dashboard holds revealed invite tokens in component state only. A reload
+loses them — the server stores just the hash — which is why a row's action
+reads **"New link"** rather than "Copy link" once the token is gone. That is
+the trade, surfaced rather than hidden.
+
+Creating a room copies the candidate link to the clipboard immediately, since
+that is the only reason anyone creates one. `navigator.clipboard` is
+unavailable over plain http on anything but localhost, so there is a
+`window.prompt` fallback — ugly, but it still gets the link into a hand.
+
+**Marketing CTAs changed.** Nav and Hero pointed at `/room/demo`, which the
+gate now refuses: rooms need an account or an invite, so an anonymous demo room
+does not exist any more. They point at `/register` and `/login`, and the nav's
+"Try live demo" became "Get started". Restoring a demo means building one that
+is genuinely open, not repointing the links.
+
+`.field`, `.field-label` and `.form-error` were added to `globals.css`; there
+was no input style before this. `:focus` on `.field` deliberately replaces the
+global `:focus-visible` outline, which sits outside the rounded box and reads
+as detached at that size.
+
+Verified with the real backend: all four routes serve 200, the login form
+server-renders, the CORS preflight returns `Access-Control-Allow-Headers:
+Content-Type, Authorization` and echoes `http://localhost:3000`, and a
+cross-origin register returns 201 with the origin echoed. `next build` and
+`tsc --noEmit` are both clean.
+
+### Still stubbed
+- Nothing of the *document* persists. A room's text lives only in its hub
+  goroutine and dies when the last client leaves — pinned by
+  `TestReopenedRoomStartsEmpty`. The room record survives; its contents do not.
 - **Run output is not shared.** Only the person who pressed Run sees the
   result; the other side of the interview sees nothing. The document syncs but
   the output panel does not. Fixing it means a new `result` frame relayed by
   the hub — the natural next increment on top of step 4.
 - Language selection is per-client, not synced, so two people in one room can
-  submit the same source under different languages.
-- `CheckOrigin` allows every origin.
+  submit the same source under different languages. The room now *has* a
+  language column, so the fix is to make the client honour it.
+- No rate limiting on login. bcrypt makes it slow, not impossible.
+- Expired sessions are swept only by an explicit `DeleteExpiredSessions` call,
+  which nothing schedules yet. Harmless — the expiry is enforced in the query,
+  so a stale row is unusable, not dangerous.
 
 ### Testing note
 
@@ -365,17 +535,112 @@ deliberate. Over real connections, enough writers overrun each other's send
 buffers, so the hub correctly drops them and the room empties — which turns a
 serialisation test into a flaky backpressure test. Keep them white-box.
 
-**Judge0 has never been exercised against the real service.** The client and
-proxy are covered against a fake Judge0, and the full chain (browser payload →
-Go → Judge0 → response) was verified against a stub, confirming the language-ID
-mapping, sandbox limits, CORS preflight and error paths. But
-`judge0/judge0:1.13.0` would not finish downloading here. First person with a
-working connection should run `docker compose up -d`, wait for
-`curl localhost:2358/about`, and press Run. The likeliest thing to be wrong is
-a language ID: verify against `GET /languages`.
+**Judge0 has now been run against the real service — and it cannot execute on
+Docker Desktop for Windows.** The image finally downloaded (3.06GB compressed,
+14.1GB extracted), the stack came up, and `GET /about` returned 1.13.0. Then
+every submission failed:
 
-**The race detector has never been run** — it needs `CGO_ENABLED=1` and gcc on
-PATH. On a project whose point is concurrency, that is the highest-value gap
-to close.
+```
+status 13 Internal Error
+Failed to create control group /sys/fs/cgroup/memory/box-1/: No such file or directory
+Cannot write /sys/fs/cgroup/memory/box-2/tasks: No such file or directory
+```
 
-**Next:** step 5, auth for interviewers plus shareable candidate links.
+**The cause is cgroup v1 vs v2.** Judge0 1.13.0 sandboxes with isolate 1.8.1,
+which only speaks cgroup v1. Docker Desktop's WSL2 VM is cgroup v2 only
+(`stat -fc %T /sys/fs/cgroup` → `cgroup2fs`). isolate wants
+`/sys/fs/cgroup/memory/box-N/tasks`; v2 has neither that hierarchy nor a
+`tasks` file (it uses `cgroup.procs`). `isolate --cg -b 0 --init` fails on its
+own, so this is not submission-specific.
+
+Four workarounds were tried and all fail — do not spend the day re-deriving
+this:
+
+| Attempt | Result |
+|---|---|
+| Upgrade to `judge0/judge0:1.13.1` | Ships the **same isolate 1.8.1**. Identical failure. Not a fix. |
+| `mkdir` the v1 paths in a privileged container | Passes `--init` (they become v2 subgroups), then dies writing `tasks` |
+| Mount cgroup v1, Docker Desktop running | `memory` → `EBUSY`; the v2 hierarchy has the controller |
+| Mount cgroup v1, Docker Desktop stopped | Still `EBUSY` — Ubuntu's own systemd claims `cpu memory pids` |
+
+`cpuacct` *does* mount as v1; only the controllers something else has claimed
+are blocked. Untried: `.wslconfig` with
+`kernelCommandLine = systemd.unified_cgroup_hierarchy=0`. It is machine-wide,
+changes the kernel command line for the `docker-desktop` distro too, and WSL's
+init mounts `cgroup2fs` before systemd starts — so it may not help and may
+break the Docker Desktop engine.
+
+**What did get verified.** The language IDs are correct against the live
+service — `GET /languages` gives 60 = `Go (1.13.5)`, 63 =
+`JavaScript (Node.js 12.14.0)`, 71 = `Python (3.8.1)`, exactly as pinned in
+`internal/judge0/client.go`. The full chain also works up to the sandbox:
+`POST /api/run` returns 200 with the normalised `Result`, the Judge0 verdict
+propagates through the Go proxy, the `Message` → `Stderr` fallback in
+`toResult` fires, and an unsupported language is still rejected 400 by our own
+allowlist. Nothing in this repo needs changing.
+
+**Running Judge0 for real needs a Linux host.** Requirements, all confirmed:
+
+- **amd64.** `judge0/judge0:1.13.0` is a single-arch amd64 manifest — no ARM
+  build, so Oracle's free ARM tier and Graviton are out.
+- **cgroup v1.** Ubuntu 20.04 has it by default. On 22.04/24.04 set
+  `GRUB_CMDLINE_LINUX="systemd.unified_cgroup_hierarchy=0"`, `update-grub`,
+  reboot — **a default 24.04 box hits this exact wall.**
+- **Root with privileged Docker.** Rules out Railway, Render, Fly.io and Cloud
+  Run; managed container platforms do not grant cgroup access.
+- **~20GB disk**, 2-4GB RAM. The image alone is 14.1GB.
+
+Vercel cannot host Judge0 (no containers, no privileged mode, 250MB function
+limit) and cannot host the Go backend either — it does not support WebSockets,
+and the one-hub-goroutine-owns-the-document design needs a long-lived process
+with shared memory, which serverless cannot provide. Vercel is right for
+`web/` only; the Go backend and Judge0 need a VPS.
+
+**The race detector has now been run, and it is clean.** Every package passes
+under `-race`, and `internal/ws` — the concurrent one — also passes a 10x
+stress run:
+
+```
+ok  internal/api     4.161s
+ok  internal/judge0  4.303s
+ok  internal/ws      4.892s      (and -count=10 -> ok, 11.747s)
+```
+
+All nine ws tests pass: snapshot-on-join, author exclusion, presence, edit
+serialisation under concurrent writers, slow-client eviction, room isolation,
+room open/close lifecycle, reopened-room emptiness, and room-ID rejection.
+**No data races were reported in the hub, registry or client.** That is the
+first real evidence that the share-by-communicating design holds up — the
+document and client set are only ever touched by their owning goroutine.
+
+Caveat worth keeping in mind: `-race` only reports races that actually happen
+during a run, so this is evidence, not proof. Re-run it after any change to
+hub, registry or client — it is cheap now that the toolchain is in place.
+
+**Toolchain setup, because it was not obvious.** The detector needs
+`CGO_ENABLED=1` and a gcc, and this machine had none — no MinGW, no chocolatey
+gcc, and Ubuntu-24.04 has neither gcc nor Go. `winget install` for a mingw
+package hung with zero bytes downloaded (Delivery Optimization stall), so gcc
+was installed by hand instead:
+
+```bash
+# mingw-w64 GCC 16.2.0, ~103MB, no admin needed
+curl -L -C - -o mingw.7z https://github.com/niXman/mingw-builds-binaries/releases/download/16.2.0-rt_v14-rev1/x86_64-16.2.0-release-posix-seh-ucrt-rt_v14-rev1.7z
+cd /c/Users/hesha && /c/Windows/System32/tar.exe -xf mingw.7z   # bsdtar reads 7z
+```
+
+It now lives at `C:\Users\hesha\mingw64\bin\gcc.exe`, which is **not on PATH**.
+To run the detector:
+
+```bash
+export PATH="/c/Users/hesha/mingw64/bin:$PATH"
+CGO_ENABLED=1 CC="C:/Users/hesha/mingw64/bin/gcc.exe" go test -race ./...
+```
+
+Prefer niXman's `.7z` over the WinLibs `.zip`: same compiler, 103MB against
+261MB. Windows' own `System32\tar.exe` is bsdtar/libarchive and unpacks 7z
+without needing 7-Zip installed.
+
+**Next:** step 5, auth for interviewers plus shareable candidate links. Judge0
+execution stays unvalidated until there is a Linux host; that is a deployment
+task, not a code task, and nothing in step 5 depends on it.

@@ -21,7 +21,9 @@ func newTestServer(t *testing.T) (*Registry, func(room string) string) {
 	go reg.Run()
 
 	mux := http.NewServeMux()
-	mux.Handle("GET /ws/{roomID}", Handler(reg))
+	// AllowAll: these tests are about the hub and the registry, not about who
+	// is allowed in. Authorization has its own tests in package api.
+	mux.Handle("GET /ws/{roomID}", Handler(reg, AllowAll))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
