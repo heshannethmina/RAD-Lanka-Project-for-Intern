@@ -131,7 +131,9 @@ func CreateRoom(s *store.Store) http.HandlerFunc {
 
 		// The allowance check. Counted from the rooms table rather than a
 		// separate counter, because the rooms are the record.
-		tier := plan.ByName(u.Plan)
+		// The effective tier, so a redeemed promotion actually lifts the
+		// ceiling rather than only changing what the dashboard claims.
+		tier := effectivePlan(u)
 		if !tier.UnlimitedInterviews() {
 			used, err := s.CountRooms(r.Context(), u.ID, tier.Lifetime)
 			if err != nil {

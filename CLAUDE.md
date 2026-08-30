@@ -171,6 +171,7 @@ a hosted instance runs something newer.
 | `DELETE /api/rooms/{id}` | bearer | close it; keeps the record |
 | `POST /api/rooms/{id}/invite` | bearer | rotate the link, revoking the old |
 | `GET /api/rooms/{id}/join?token=` | invite | candidate's link check |
+| `POST /api/promo/redeem` | bearer | claim a promotion code |
 | `POST /api/run` | — | `{"language","source"}` → Judge0 |
 | `GET /ws/{roomID}?token=` | session **or** invite | the editor socket |
 
@@ -762,6 +763,92 @@ Two things about the numbers:
 `plan.ByName` falls back to Free for anything it does not recognise, so a row
 written by a newer build fails closed.
 
+### Promotion codes
+
+Some people are given the product: pilot customers, universities, anyone being
+shown it. A promotion code is how — they register, redeem a code, and their
+limits lift with no card and no subscription.
+
+`POST /api/promo/redeem` takes `{"code"}` and answers with the **same shape as
+`/api/me`**, so the client swaps its user wholesale rather than refetching to
+find out what changed.
+
+**The grant overrides the subscription, it does not replace it.** `users.plan`
+stays whatever they pay for and `users.promo_plan` sits beside it; when the
+grant lapses they fall back to their subscription instead of being dropped to
+Free. Everything reads `api.effectivePlan`, and a second place that reads
+`u.Plan` directly is how a comped account quietly stops being comped.
+
+A lapsed grant is left in the row rather than swept, for the same reason an
+expired session is: the check is on the read path, so a stale grant is inert,
+and clearing it would make every request a write.
+
+| Column | Means |
+|---|---|
+| `plan` | tier granted; `unlimited` unless you want "3 months of Pro" |
+| `max_redemptions` | how many people may claim it; **0 = no ceiling** |
+| `expires_at` | when the *coupon* stops working; NULL = never |
+| `grant_days` | how long the *grant* lasts once claimed; NULL = forever |
+
+`plan.Unlimited` is a separate tier from Enterprise on purpose. Both are
+uncapped, but Enterprise is *metered and billed* per interview-hour, and an
+invoicing run has to tell a paying account from a comped one.
+
+**The code is stored in plain text**, unlike session and invite tokens. A token
+identifies a person and must be useless to whoever steals the database; a promo
+code is a coupon — printed on a slide, typed by hand, often shared with a whole
+cohort deliberately. Hashing it would mean an operator could never read back a
+code they issued or write one with a plain INSERT, and the blast radius of a
+leak is free interview minutes, which `max_redemptions` and `expires_at`
+already bound.
+
+Four things that are load-bearing:
+
+- **The whole redemption is one transaction over a locked coupon row.** Every
+  interesting failure here is a race — two people claiming the last seat, or
+  one person double-clicking Redeem. `SELECT ... FOR UPDATE` is what makes the
+  ceiling a real ceiling. Pinned by
+  `TestRedemptionCeilingHoldsUnderConcurrentRedeems`, which races ten accounts
+  at a three-seat code.
+- **The primary key on `promo_redemptions` is the point of that table.**
+  Without it a code with `grant_days` set could be re-redeemed every morning to
+  push the expiry out forever, turning a 30-day trial into a permanent one.
+- **The tier is vetted inside the transaction, before any write.** An
+  end-to-end run caught the opposite: checking after the commit meant a typo in
+  a hand-written `plan` column burned the one redemption that account would
+  ever get, overwrote the grant it already had, and *then* answered 500.
+  `plan.Grantable` is passed down as a func so `store` stays ignorant of what a
+  plan is. Pinned by `TestMisconfiguredCodeCostsTheRedeemerNothing`.
+- **Redemption is rate limited per account**, 10 failures an hour, in memory.
+  A promo code is guessable in a way a session token is not — it has to be
+  short enough to type — and the prize is unmetered use. Per account because
+  the route is behind auth and an IP is shared by a whole office; in memory
+  because a failed guess must not cost a write, which would make the defence
+  the amplifier. It resets on restart, so codes should still be long enough not
+  to fall to a burst.
+
+Codes are normalised — upper-cased, all whitespace stripped — so `syncr-pilot`,
+`SYNCR - PILOT` and a trailing newline are one coupon. They are read off slides
+and out of emails; refusing those would be a support ticket per customer.
+
+**Issuing one is a SQL INSERT.** There is no admin UI, and adding one means
+building an admin role, which is a bigger piece of work than the feature:
+
+```sql
+-- unlimited, for 25 people, no end date
+INSERT INTO promo_codes (code, plan, max_redemptions, note)
+VALUES ('SYNCR-PILOT', 'unlimited', 25, 'launch pilot');
+
+-- 90 days of Pro, one claim
+INSERT INTO promo_codes (code, plan, max_redemptions, grant_days, note)
+VALUES ('UNI-CS-2026', 'pro', 1, 90, 'placement office');
+```
+
+Revoking is deliberate and separate: `DELETE FROM promo_codes` stops new claims
+but leaves grants already handed out, because deleting a leaked coupon should
+not quietly rewrite them. Taking those back is
+`UPDATE users SET promo_plan = NULL WHERE promo_code = '...'`.
+
 **There is no billing.** `users.plan` is the entire subscription system; move
 somebody to Pro with an UPDATE. Stripe is a separate piece of work needing a
 company entity and tax setup, and is well beyond a pilot.
@@ -779,7 +866,10 @@ company entity and tax setup, and is well beyond a pilot.
 - Language selection is per-client, not synced, so two people in one room can
   submit the same source under different languages. The room now *has* a
   language column, so the fix is to make the client honour it.
-- No rate limiting on login. bcrypt makes it slow, not impossible.
+- No rate limiting on login. bcrypt makes it slow, not impossible. Promo
+  redemption *is* limited, but only per account and only in memory.
+- Promotion codes are issued and revoked with SQL. There is no admin UI,
+  and no way to list who redeemed what without a query.
 - Expired sessions are swept only by an explicit `DeleteExpiredSessions` call,
   which nothing schedules yet. Harmless — the expiry is enforced in the query,
   so a stale row is unusable, not dangerous.

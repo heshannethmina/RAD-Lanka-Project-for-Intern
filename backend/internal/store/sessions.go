@@ -37,11 +37,11 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, tokenHash []byt
 func (s *Store) UserBySessionToken(ctx context.Context, tokenHash []byte) (*User, error) {
 	var u User
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.id, u.email, u.password_hash, u.plan, u.created_at
+		SELECT `+userColumns+`
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.expires_at > now()
-	`, tokenHash).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Plan, &u.CreatedAt)
+	`, tokenHash).Scan(scanUser(&u)...)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

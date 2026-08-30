@@ -15,6 +15,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 /** Namespaced so it cannot collide with anything else on localhost. */
 const TOKEN_KEY = "syncr.session";
 
+/** `plan` is the subscription, not necessarily the tier in force — a
+ * promotion can be granting more. Read `usage` for what actually applies. */
 export type User = { id: number; email: string; plan: string };
 
 /** What the current plan allows, and how much of it is gone. */
@@ -28,6 +30,14 @@ export type Usage = {
   used_minutes: number;
   /** True when the allowance never resets — a trial, not a monthly budget. */
   lifetime: boolean;
+  /**
+   * Set when a redeemed promotion is what is granting the limits above,
+   * rather than a subscription. The UI has to say which, or somebody sees
+   * "Unlimited" and assumes they are being charged for it.
+   */
+  promo_code?: string;
+  /** When that grant lapses. Null for one that does not. */
+  promo_expires_at: string | null;
 };
 
 export type Me = User & { usage: Usage };
@@ -175,6 +185,19 @@ export const api = {
   },
 
   me: (signal?: AbortSignal) => request<Me>("/api/me", { auth: true, signal }),
+
+  /**
+   * Applies a promotion code to the signed-in account.
+   *
+   * Answers with the same shape as `me`, so the caller replaces its user
+   * wholesale and the new limits are on screen without a second round trip.
+   */
+  redeemPromo: (code: string) =>
+    request<Me>("/api/promo/redeem", {
+      method: "POST",
+      auth: true,
+      body: { code },
+    }),
 
   createRoom: (opts: {
     title: string;

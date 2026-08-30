@@ -15,6 +15,12 @@ const (
 	Free       Name = "free"
 	Pro        Name = "pro"
 	Enterprise Name = "enterprise"
+	// Unlimited is what a promotion code grants. It is not for sale, which is
+	// why it is not Enterprise: Enterprise is uncapped *and metered*, billed
+	// per interview-hour after the fact, and an invoicing run has to be able
+	// to tell a paying account from a comped one. Same limits, different
+	// meaning.
+	Unlimited Name = "unlimited"
 )
 
 // Plan is what a tier allows.
@@ -58,6 +64,26 @@ var plans = map[Name]Plan{
 		MaxInterviews: 0,
 		MaxDuration:   0,
 	},
+	Unlimited: {
+		Name:          Unlimited,
+		Label:         "Unlimited",
+		MaxInterviews: 0,
+		MaxDuration:   0,
+	},
+}
+
+// Grantable reports whether a promotion code may hand out this tier.
+//
+// Checked when a code is redeemed rather than when it is written, because
+// codes are written by hand straight into the table. Without it a typo in the
+// plan column would silently fall back to Free through ByName, and the person
+// who redeemed it would be told they had been upgraded while nothing changed.
+func Grantable(name string) bool {
+	switch Name(name) {
+	case Unlimited, Pro, Enterprise:
+		return true
+	}
+	return false
 }
 
 // ByName returns the plan for a stored value, falling back to Free.

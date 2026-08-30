@@ -23,6 +23,14 @@ type AuthState =
  */
 export function useAuth(redirectTo?: string): AuthState & {
   signOut: () => Promise<void>;
+  /**
+   * Installs a user the caller already has.
+   *
+   * Redeeming a promotion answers with the whole /api/me payload, so
+   * refetching to see the new limits would be a round trip for data already
+   * in hand — and a window in which the page shows the old plan.
+   */
+  setUser: (user: Me) => void;
 } {
   const router = useRouter();
   // Derived at mount rather than assigned from an effect: whether a token
@@ -68,5 +76,9 @@ export function useAuth(redirectTo?: string): AuthState & {
     router.replace("/login");
   }, [router]);
 
-  return { ...state, signOut };
+  const setUser = useCallback((user: Me) => {
+    setState({ status: "signedIn", user });
+  }, []);
+
+  return { ...state, signOut, setUser };
 }

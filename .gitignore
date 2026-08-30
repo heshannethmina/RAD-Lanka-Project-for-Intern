@@ -27,3 +27,7 @@ coverage.txt
 Thumbs.db
 .idea/
 *.swp
+
+
+#Security Test
+SECURITY.MD

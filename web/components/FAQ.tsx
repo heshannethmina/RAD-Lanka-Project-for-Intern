@@ -25,6 +25,10 @@ const FAQS = [
     a: "The interview in progress finishes — nothing is cut off mid-sentence. You are told before you start a session you do not have the time for.",
   },
   {
+    q: "I was given a promotion code. Where does it go?",
+    a: "Sign in, open your interviews, and enter it under “Have a promotion code?”. It applies to your account straight away — no card, no subscription — and the dashboard shows what it granted and when it runs out.",
+  },
+  {
     q: "What languages are supported?",
     a: "Python, Go and JavaScript at launch, with more added based on what early teams actually ask for.",
   },

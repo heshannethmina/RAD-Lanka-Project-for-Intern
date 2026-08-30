@@ -80,11 +80,35 @@ type usageJSON struct {
 	// Lifetime means the allowance never resets — the free tier is a trial,
 	// not a monthly budget, and the UI has to say so.
 	Lifetime bool `json:"lifetime"`
+	// PromoCode is set when a redeemed promotion is what is granting the
+	// limits above, rather than the subscription in Plan. The UI has to be
+	// able to say which, or somebody sees "Unlimited" and assumes they are
+	// being charged for it.
+	PromoCode string `json:"promo_code,omitempty"`
+	// PromoExpiresAt is when that grant lapses; nil for one that does not.
+	PromoExpiresAt *time.Time `json:"promo_expires_at"`
+}
+
+// effectivePlan is the tier a user actually gets right now.
+//
+// A live promotion overrides the subscription rather than replacing it, so a
+// grant that lapses drops somebody back to what they pay for instead of to
+// Free. Every limit check goes through here — a second place that reads
+// u.Plan directly is how a comped account quietly stops being comped.
+func effectivePlan(u *store.User) plan.Plan {
+	if u.PromoActive() {
+		return plan.ByName(u.PromoPlan)
+	}
+	return plan.ByName(u.Plan)
 }
 
 func toUserJSON(u *store.User) userJSON {
 	// PasswordHash is deliberately absent. Encoding the store type directly
 	// would ship the bcrypt hash to the client.
+	//
+	// Plan is the *subscription*, not the tier in force — a promotion can be
+	// granting more than this says. Usage carries the effective one, and that
+	// is what the UI shows; this stays honest about what is being paid for.
 	return userJSON{ID: u.ID, Email: u.Email, Plan: u.Plan}
 }
 
@@ -204,35 +228,44 @@ func Me(s *store.Store) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "not signed in")
 			return
 		}
-
-		tier := plan.ByName(u.Plan)
-		out := meJSON{
-			userJSON: toUserJSON(u),
-			Usage: usageJSON{
-				PlanLabel:           tier.Label,
-				InterviewsIncluded:  tier.MaxInterviews,
-				UnlimitedInterviews: tier.UnlimitedInterviews(),
-				MaxMinutes:          int(tier.MaxDuration / time.Minute),
-				Lifetime:            tier.Lifetime,
-			},
-		}
-
-		// Usage is a nicety, not the enforcement — that happens on the room
-		// creation path. So a failure here degrades to zeroes and a log line
-		// rather than blocking somebody from seeing who they are signed in as.
-		if used, err := s.CountRooms(r.Context(), u.ID, tier.Lifetime); err == nil {
-			out.Usage.InterviewsUsed = used
-		} else {
-			log.Printf("api: me: count rooms: %v", err)
-		}
-		if spent, err := s.UsedDuration(r.Context(), u.ID, tier.Lifetime); err == nil {
-			out.Usage.UsedMinutes = int(spent / time.Minute)
-		} else {
-			log.Printf("api: me: used duration: %v", err)
-		}
-
-		writeJSON(w, http.StatusOK, out)
+		writeJSON(w, http.StatusOK, meFor(r.Context(), s, u))
 	}
+}
+
+// meFor builds the signed-in view. Shared with the promo redemption, which
+// answers with the same shape so the client can swap its user wholesale
+// instead of refetching to see what changed.
+func meFor(ctx context.Context, s *store.Store, u *store.User) meJSON {
+	tier := effectivePlan(u)
+	out := meJSON{
+		userJSON: toUserJSON(u),
+		Usage: usageJSON{
+			PlanLabel:           tier.Label,
+			InterviewsIncluded:  tier.MaxInterviews,
+			UnlimitedInterviews: tier.UnlimitedInterviews(),
+			MaxMinutes:          int(tier.MaxDuration / time.Minute),
+			Lifetime:            tier.Lifetime,
+		},
+	}
+	if u.PromoActive() {
+		out.Usage.PromoCode = u.PromoCode
+		out.Usage.PromoExpiresAt = u.PromoExpiresAt
+	}
+
+	// Usage is a nicety, not the enforcement — that happens on the room
+	// creation path. So a failure here degrades to zeroes and a log line
+	// rather than blocking somebody from seeing who they are signed in as.
+	if used, err := s.CountRooms(ctx, u.ID, tier.Lifetime); err == nil {
+		out.Usage.InterviewsUsed = used
+	} else {
+		log.Printf("api: me: count rooms: %v", err)
+	}
+	if spent, err := s.UsedDuration(ctx, u.ID, tier.Lifetime); err == nil {
+		out.Usage.UsedMinutes = int(spent / time.Minute)
+	} else {
+		log.Printf("api: me: used duration: %v", err)
+	}
+	return out
 }
 
 func decodeCredentials(w http.ResponseWriter, r *http.Request) (credentials, bool) {

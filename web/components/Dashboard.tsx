@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Logo from "./Logo";
+import PromoRedeem from "./PromoRedeem";
 import { useAuth } from "@/lib/useAuth";
 import {
   api,
@@ -29,7 +30,7 @@ function formatDate(iso: string): string {
 }
 
 export default function Dashboard() {
-  const { status, user, signOut } = useAuth("/login");
+  const { status, user, signOut, setUser } = useAuth("/login");
   const usage = status === "signedIn" ? user.usage : null;
 
   const [rooms, setRooms] = useState<Room[] | null>(null);
@@ -217,6 +218,11 @@ export default function Dashboard() {
                   Upgrade for more
                 </Link>
               )}
+            {/* Full width, so the redeem form has room to open without
+                squeezing the figures above it onto extra lines. */}
+            <div className="w-full">
+              <PromoRedeem usage={usage} onRedeemed={setUser} />
+            </div>
           </div>
         )}
 

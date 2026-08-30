@@ -62,6 +62,45 @@ TEST_DATABASE_URL='postgres://syncr:syncrdev@localhost:5433/syncr' \
 CGO_ENABLED=1 go test -race ./...
 ```
 
+## Giving somebody free access
+
+Pilot customers, universities and anyone being shown the product get a
+promotion code instead of a subscription. They register, enter it under
+**Have a promotion code?** on their interviews page, and their limits lift.
+
+There is no admin UI, so issuing one is an INSERT against the application
+database:
+
+```sql
+-- unlimited interviews and unlimited length, for 25 people, no end date
+INSERT INTO promo_codes (code, plan, max_redemptions, note)
+VALUES ('SYNCR-PILOT', 'unlimited', 25, 'launch pilot');
+
+-- 90 days of Pro, claimable once
+INSERT INTO promo_codes (code, plan, max_redemptions, grant_days, note)
+VALUES ('UNI-CS-2026', 'pro', 1, 90, 'placement office');
+```
+
+`max_redemptions` of 0 means no ceiling; a NULL `grant_days` means the grant
+never lapses; `expires_at` bounds the *code* rather than the grant. Codes are
+matched upper-cased and with whitespace stripped, so `syncr-pilot` works.
+
+Who has claimed what:
+
+```sql
+SELECT r.code, u.email, r.redeemed_at
+FROM promo_redemptions r JOIN users u ON u.id = r.user_id
+ORDER BY r.redeemed_at DESC;
+```
+
+Deleting a code stops new claims but leaves grants already given, on purpose.
+To take those back as well:
+
+```sql
+UPDATE users SET promo_plan = NULL, promo_expires_at = NULL
+WHERE promo_code = 'SYNCR-PILOT';
+```
+
 ## Deploying
 
 The two halves deploy separately: **Vercel** for the frontend, **Render** for
