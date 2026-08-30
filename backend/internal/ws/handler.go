@@ -15,18 +15,42 @@ import (
 // else is treated as the authorizer itself being broken.
 var ErrUnauthorized = errors.New("ws: unauthorized")
 
-// Authorizer decides whether a connection may join a room.
+// Role is what a connected client is allowed to do.
+//
+// The hub needs this because the two participants are not equivalent: an
+// interviewer sets the question, a candidate answers it. Without a role, a
+// candidate could rewrite the question they are being asked.
+type Role string
+
+const (
+	// RoleInterviewer owns the room. May change the prompt.
+	RoleInterviewer Role = "interviewer"
+	// RoleCandidate arrived through an invite link. May edit code and run it,
+	// but not change the question.
+	RoleCandidate Role = "candidate"
+)
+
+// Authorizer decides whether a connection may join a room, and as what.
 //
 // It is a function rather than a concrete type so this package stays ignorant
 // of Postgres and of what a token means: the hub's job is to move text between
 // sockets, and it should not grow a dependency on the store to do it. The
 // server wires in an implementation that accepts either an interviewer's
 // session token or a room's invite token.
-type Authorizer func(ctx context.Context, roomID, token string) error
+type Authorizer func(ctx context.Context, roomID, token string) (Role, error)
 
-// AllowAll is an Authorizer that admits everyone. It exists for tests, and is
-// named so that using it in the server is obviously wrong at the call site.
-func AllowAll(context.Context, string, string) error { return nil }
+// AllowAll is an Authorizer that admits everyone as an interviewer. It exists
+// for tests, and is named so that using it in the server is obviously wrong at
+// the call site.
+func AllowAll(context.Context, string, string) (Role, error) {
+	return RoleInterviewer, nil
+}
+
+// AllowAllAsCandidate is AllowAll with the lesser role, for tests that need to
+// prove a candidate is refused something.
+func AllowAllAsCandidate(context.Context, string, string) (Role, error) {
+	return RoleCandidate, nil
+}
 
 // Upgrader is exported so the server can tighten CheckOrigin at startup, where
 // the allowed origins are known.
@@ -103,7 +127,8 @@ func Handler(reg *Registry, authorize Authorizer) http.HandlerFunc {
 		// access log if one is ever enabled, which is the accepted cost; the
 		// alternative, Sec-WebSocket-Protocol smuggling, is worse to read and
 		// no more secret.
-		if err := authorize(r.Context(), roomID, r.URL.Query().Get("token")); err != nil {
+		role, err := authorize(r.Context(), roomID, r.URL.Query().Get("token"))
+		if err != nil {
 			if errors.Is(err, ErrUnauthorized) {
 				// Again before the upgrade: a 401 is something the client can
 				// act on, where a socket that opens and closes is not.
@@ -128,7 +153,7 @@ func Handler(reg *Registry, authorize Authorizer) http.HandlerFunc {
 		// when the registry decides whether to close the room.
 		defer reg.Leave(roomID)
 
-		c := NewClient(hub, conn)
+		c := NewClient(hub, conn, role)
 		hub.Register(c)
 		c.Run()
 	}

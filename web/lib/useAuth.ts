@@ -25,12 +25,23 @@ export function useAuth(redirectTo?: string): AuthState & {
   signOut: () => Promise<void>;
 } {
   const router = useRouter();
-  const [state, setState] = useState<AuthState>({ status: "loading", user: null });
+  // Derived at mount rather than assigned from an effect: whether a token
+  // exists is knowable immediately, and starting at "loading" only to
+  // correct it a render later is a cascade with no upside.
+  //
+  // On the server getToken() is always null, so the first paint is the
+  // signed-out branch either way — and every caller renders nothing for both
+  // "loading" and "signedOut", so the two are indistinguishable in the markup
+  // and hydration has nothing to disagree about.
+  const [state, setState] = useState<AuthState>(() =>
+    getToken()
+      ? { status: "loading", user: null }
+      : { status: "signedOut", user: null },
+  );
 
   useEffect(() => {
-    // No token at all: skip the request, there is nothing to verify.
+    // No token at all: nothing to verify, and the state already says so.
     if (!getToken()) {
-      setState({ status: "signedOut", user: null });
       if (redirectTo) router.replace(redirectTo);
       return;
     }

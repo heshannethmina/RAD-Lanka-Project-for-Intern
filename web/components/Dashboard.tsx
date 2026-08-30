@@ -66,7 +66,13 @@ export default function Dashboard() {
   useEffect(() => {
     if (status !== "signedIn") return;
     const controller = new AbortController();
-    void load(controller.signal);
+    // Queued rather than called straight from the effect body: load() resolves
+    // synchronously on a cached response, and setting state during the effect
+    // is the cascade React warns about. A microtask defers it past commit
+    // without any user-visible delay.
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) void load(controller.signal);
+    });
     return () => controller.abort();
   }, [status, load]);
 

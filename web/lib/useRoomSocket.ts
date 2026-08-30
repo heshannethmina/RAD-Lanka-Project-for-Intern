@@ -5,11 +5,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type ConnectionStatus = "connecting" | "open" | "closed";
 
 /** Frames the server sends. Mirrors backend/internal/ws/message.go. */
+export type Role = "interviewer" | "candidate";
+
 type ServerMessage =
-  | { type: "snapshot"; text?: string }
+  | { type: "snapshot"; text?: string; prompt?: string; role?: string }
   | { type: "edit"; text?: string }
   | { type: "presence"; clients?: number }
-  | { type: "result"; text?: string; failed?: boolean };
+  | { type: "result"; text?: string; failed?: boolean }
+  | { type: "prompt"; prompt?: string };
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080";
 
@@ -22,6 +25,14 @@ type Handlers = {
    * hook's return value.
    */
   onSnapshot: (text: string, send: (text: string) => void) => void;
+  /**
+   * The interview question, and what this client is allowed to do with it.
+   * Delivered with the snapshot because both are room state a joiner needs
+   * before it can render anything correctly.
+   */
+  onJoin: (prompt: string, role: Role) => void;
+  /** The interviewer changed the question. */
+  onPrompt: (prompt: string) => void;
   /** Full document after somebody else's edit. */
   onEdit: (text: string) => void;
   /**
@@ -79,6 +90,17 @@ export function useRoomSocket(
    * be shared still succeeded for the person who pressed Run, and failing
    * loudly here would report a problem they cannot act on.
    */
+  /**
+   * Publishes the interview question. The server ignores this from a
+   * candidate, so the UI hiding the editor is a convenience, not the control.
+   */
+  const sendPrompt = useCallback((prompt: string) => {
+    const ws = socketRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "prompt", prompt }));
+    }
+  }, []);
+
   const sendResult = useCallback((text: string, failed: boolean) => {
     const ws = socketRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
@@ -89,10 +111,11 @@ export function useRoomSocket(
   useEffect(() => {
     // No token yet: the caller is still resolving access. Stay closed rather
     // than opening a socket that would only be refused.
-    if (!token) {
-      setStatus("connecting");
-      return;
-    }
+    //
+    // Nothing to set here — "connecting" is already the initial state, and
+    // connect() sets it again on every attempt. Assigning it in this branch
+    // would only be an extra render saying what the state already says.
+    if (!token) return;
 
     let disposed = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -123,6 +146,13 @@ export function useRoomSocket(
 
         switch (msg.type) {
           case "snapshot":
+            // Role before document: the caller may render differently for a
+            // candidate, and doing it in this order avoids a flash of the
+            // interviewer's view.
+            handlersRef.current.onJoin(
+              msg.prompt ?? "",
+              msg.role === "candidate" ? "candidate" : "interviewer",
+            );
             handlersRef.current.onSnapshot(msg.text ?? "", sendEdit);
             break;
           case "edit":
@@ -133,6 +163,9 @@ export function useRoomSocket(
             break;
           case "result":
             handlersRef.current.onResult(msg.text ?? "", msg.failed ?? false);
+            break;
+          case "prompt":
+            handlersRef.current.onPrompt(msg.prompt ?? "");
             break;
         }
       };
@@ -159,5 +192,5 @@ export function useRoomSocket(
     };
   }, [roomId, token, sendEdit]);
 
-  return { status, peers, sendEdit, sendResult };
+  return { status, peers, sendEdit, sendResult, sendPrompt };
 }

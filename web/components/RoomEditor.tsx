@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { applyRemoteText, type CodeEditor } from "@/lib/applyRemoteText";
-import { useRoomSocket, type ConnectionStatus } from "@/lib/useRoomSocket";
+import { useRoomSocket, type ConnectionStatus, type Role } from "@/lib/useRoomSocket";
+import { api } from "@/lib/api";
+import SplitPane from "./SplitPane";
 import { formatRunResult, isFailure, runCode, RunError } from "@/lib/runCode";
 import { loadPython, runPython } from "@/lib/runPython";
 import { LogoMark } from "./Logo";
@@ -119,6 +121,11 @@ export default function RoomEditor({
 }) {
   const [language, setLanguage] = useState(initialLanguage);
   const [output, setOutput] = useState<string | null>(null);
+  // Until the snapshot arrives we do not know which side of the interview this
+  // is. Default to candidate — the read-only view — so a slow connection never
+  // briefly offers an editable question to someone who may not have one.
+  const [role, setRole] = useState<Role>("candidate");
+  const [prompt, setPrompt] = useState("");
   const [failed, setFailed] = useState(false);
   const [running, setRunning] = useState(false);
 
@@ -147,7 +154,7 @@ export default function RoomEditor({
     }
   }, []);
 
-  const { status, peers, sendEdit, sendResult } = useRoomSocket(roomId, token, {
+  const { status, peers, sendEdit, sendResult, sendPrompt } = useRoomSocket(roomId, token, {
     onSnapshot: (text, send) => {
       if (text !== "") {
         write(text);
@@ -158,6 +165,11 @@ export default function RoomEditor({
       // own editor.
       send(editorRef.current?.getValue() ?? STARTER);
     },
+    onJoin: (roomPrompt, joinedAs) => {
+      setRole(joinedAs);
+      setPrompt(roomPrompt);
+    },
+    onPrompt: setPrompt,
     onEdit: write,
     // Someone else pressed Run. Show what they got, so an interviewer can see
     // their candidate's output instead of only their own.
@@ -173,13 +185,40 @@ export default function RoomEditor({
   // than on the first click. It is a ~6MB download, and paying for it while
   // someone is still reading the question is invisible; paying for it after
   // they press Run is a long, unexplained wait.
-  //
-  // Failure is ignored on purpose: runPython retries and reports properly, and
-  // there is nothing useful to say about a prefetch nobody asked for.
   useEffect(() => {
     if (language !== "python") return;
-    void loadPython().catch(() => {});
+    loadPython();
   }, [language]);
+
+  // Saving the prompt is debounced, but relaying it is not: the candidate
+  // should see the question appear as it is typed, while Postgres only needs
+  // the version that is left after the interviewer stops.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handlePromptChange = useCallback(
+    (next: string) => {
+      setPrompt(next);
+      sendPrompt(next);
+
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        // Failure is deliberately quiet. The candidate already has the text
+        // over the socket, so a failed save costs a reload, not the interview;
+        // an error banner over a question someone is mid-sentence in would be
+        // worse than the problem.
+        void api.updatePrompt(roomId, next).catch(() => {});
+      }, 800);
+    },
+    [roomId, sendPrompt],
+  );
+
+  // Flush nothing on unmount, but do stop the timer: firing after the room is
+  // gone would be a write nobody is waiting for.
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, []);
 
   const handleBeforeMount = useCallback((monaco: Monaco) => {
     // The same GitHub-light token palette the marketing editor mockup uses,
@@ -345,80 +384,123 @@ export default function RoomEditor({
         </div>
       </header>
 
-      {/* ---------- editor + sidebar ---------- */}
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex h-9 shrink-0 items-center border-b border-line px-3">
-            <span className="rounded-md border border-line bg-bg-subtle px-2.5 py-1 font-mono text-[11px] text-ink">
-              {active.file}
-            </span>
-          </div>
+      {/* ---------- three resizable panes ---------- */}
+      {/*
+        Editor on the left; output above prompt on the right. Each divider
+        remembers where it was put, per browser, so someone who prefers a tall
+        prompt panel does not re-drag it every interview.
 
-          <div className="min-h-0 flex-1">
-            <Editor
-              height="100%"
-              language={language}
-              defaultValue={STARTER}
-              theme="syncr-light"
-              beforeMount={handleBeforeMount}
-              onMount={handleMount}
-              onChange={handleChange}
-              options={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 13.5,
-                minimap: { enabled: true, size: "fit", showSlider: "always" },
-                padding: { top: 16 },
-                scrollBeyondLastLine: false,
-                renderLineHighlight: "line",
-                smoothScrolling: true,
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <aside className="flex w-full shrink-0 flex-col border-t border-line lg:w-[340px] lg:border-l lg:border-t-0">
-          <section className="flex min-h-[200px] flex-col border-b border-line p-4">
-            <h2 className="text-[13px] font-semibold text-ink">Output</h2>
-            <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-bg-subtle p-3">
-              {output ? (
-                <pre
-                  className={`whitespace-pre-wrap font-mono text-[12px] leading-relaxed ${
-                    failed ? "text-[#B42318]" : "text-ink"
-                  }`}
-                >
-                  {output}
-                </pre>
-              ) : (
-                <p className="font-mono text-[12px] text-ink-muted">
-                  Run the code to see output here.
-                </p>
-              )}
+        min-h-0 runs the whole way down. A flex child defaults to min-height
+        auto, which lets long output push a pane past its share and makes the
+        divider look stuck; without it none of these panels would scroll.
+      */}
+      <SplitPane
+        direction="horizontal"
+        className="flex-1"
+        defaultSize={62}
+        min={30}
+        max={80}
+        storageKey="syncr.split.main"
+        first={
+          <div className="flex h-full min-h-0 min-w-0 flex-col">
+            <div className="flex h-9 shrink-0 items-center border-b border-line px-3">
+              <span className="rounded-md border border-line bg-bg-subtle px-2.5 py-1 font-mono text-[11px] text-ink">
+                {active.file}
+              </span>
             </div>
-          </section>
 
-          <section className="flex min-h-0 flex-1 flex-col p-4">
-            <h2 className="text-[13px] font-semibold text-ink">Prompt</h2>
-            <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-bg-subtle p-4">
-              <h3 className="text-[13px] font-semibold text-ink">
-                Largest value in a list
-              </h3>
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-body">
-                Given a list of integers, write a function that returns the
-                largest value.
-              </p>
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-body">
-                For the input <code className="font-mono">[10, 5, 22, 11]</code>{" "}
-                it should return <code className="font-mono">22</code>.
-              </p>
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-body">
-                Handle the edge cases too — an empty list, and a list where the
-                largest value appears more than once.
-              </p>
+            <div className="min-h-0 flex-1">
+              <Editor
+                height="100%"
+                language={language}
+                defaultValue={STARTER}
+                theme="syncr-light"
+                beforeMount={handleBeforeMount}
+                onMount={handleMount}
+                onChange={handleChange}
+                options={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 13.5,
+                  minimap: { enabled: true, size: "fit", showSlider: "always" },
+                  padding: { top: 16 },
+                  scrollBeyondLastLine: false,
+                  renderLineHighlight: "line",
+                  smoothScrolling: true,
+                }}
+              />
             </div>
-          </section>
-        </aside>
-      </div>
+          </div>
+        }
+        second={
+          <SplitPane
+            direction="vertical"
+            className="h-full border-l border-line"
+            defaultSize={45}
+            min={15}
+            max={85}
+            storageKey="syncr.split.side"
+            first={
+              <section className="flex h-full min-h-0 flex-col p-4">
+                <h2 className="shrink-0 text-[13px] font-semibold text-ink">Output</h2>
+                <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-bg-subtle p-3">
+                  {output ? (
+                    <pre
+                      className={`whitespace-pre-wrap font-mono text-[12px] leading-relaxed ${
+                        failed ? "text-[#B42318]" : "text-ink"
+                      }`}
+                    >
+                      {output}
+                    </pre>
+                  ) : (
+                    <p className="font-mono text-[12px] text-ink-muted">
+                      Run the code to see output here.
+                    </p>
+                  )}
+                </div>
+              </section>
+            }
+            second={
+              <section className="flex h-full min-h-0 flex-col p-4">
+                <div className="flex shrink-0 items-baseline justify-between gap-3">
+                  <h2 className="text-[13px] font-semibold text-ink">Prompt</h2>
+                  <span className="text-[11px] text-ink-muted">
+                    {role === "interviewer" ? "Editable — the candidate sees changes live" : "Set by your interviewer"}
+                  </span>
+                </div>
+
+                {/*
+                  The interviewer gets a textarea, the candidate gets text.
+                  This is a convenience, not the control: the server ignores a
+                  prompt frame from a candidate regardless of what the UI does.
+                */}
+                {role === "interviewer" ? (
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => handlePromptChange(e.target.value)}
+                    placeholder="Type the question here. The candidate sees it as you type."
+                    spellCheck={false}
+                    className="mt-3 min-h-0 w-full flex-1 resize-none overflow-auto rounded-lg border border-line bg-bg-subtle p-4 text-[13px] leading-relaxed text-ink-body outline-none transition-colors focus:border-accent focus:bg-white"
+                  />
+                ) : (
+                  <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-bg-subtle p-4">
+                    {prompt.trim() ? (
+                      // whitespace-pre-wrap so an interviewer's line breaks and
+                      // indentation survive, without needing a markdown parser.
+                      <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink-body">
+                        {prompt}
+                      </p>
+                    ) : (
+                      <p className="text-[13px] leading-relaxed text-ink-muted">
+                        Your interviewer has not set a question yet.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </section>
+            }
+          />
+        }
+      />
     </div>
   );
 }

@@ -30,6 +30,14 @@ const (
 	// person edits, and writing it into the shared text would fight with
 	// whoever is typing.
 	TypeResult MessageType = "result"
+
+	// TypePrompt carries the interview question.
+	//
+	// Accepted from an interviewer only. A candidate that sends one is
+	// ignored: they may answer the question, not rewrite it. Unlike a result,
+	// this *is* room state, so the hub keeps it and hands it to late joiners
+	// in their snapshot.
+	TypePrompt MessageType = "prompt"
 )
 
 // Message is the single frame type exchanged over the socket.
@@ -41,4 +49,14 @@ type Message struct {
 	// Failed marks a run that did not succeed, so the other side can show it
 	// the same way the person who pressed Run sees it. Set on TypeResult only.
 	Failed bool `json:"failed,omitempty"`
+	// Prompt is the interview question. Sent on TypePrompt, and on the
+	// TypeSnapshot a client receives when it joins.
+	//
+	// No omitempty: clearing the question is a real edit, and omitempty would
+	// drop the empty string and leave the other side showing the old one.
+	Prompt string `json:"prompt"`
+	// Role tells a client what it is allowed to do, so the UI can offer an
+	// editable question to an interviewer and a read-only one to a candidate.
+	// Sent on TypeSnapshot only.
+	Role string `json:"role,omitempty"`
 }

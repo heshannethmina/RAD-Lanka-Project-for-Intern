@@ -21,6 +21,8 @@ export type Room = {
   id: string;
   title: string;
   language: string;
+  /** The interview question. Only the owner may change it. */
+  prompt: string;
   created_at: string;
   closed_at: string | null;
   open: boolean;
@@ -170,6 +172,19 @@ export const api = {
    */
   getRoom: (roomId: string, signal?: AbortSignal) =>
     request<Room>(`/api/rooms/${encodeURIComponent(roomId)}`, { auth: true, signal }),
+
+  /**
+   * Saves the interview question.
+   *
+   * The socket relays prompt edits live; this is the durable half, so a
+   * reload does not lose them. Both enforce owner-only.
+   */
+  updatePrompt: (roomId: string, prompt: string) =>
+    request<void>(`/api/rooms/${encodeURIComponent(roomId)}/prompt`, {
+      method: "PUT",
+      auth: true,
+      body: { prompt },
+    }),
 
   closeRoom: (roomId: string) =>
     request<void>(`/api/rooms/${encodeURIComponent(roomId)}`, {

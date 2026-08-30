@@ -33,6 +33,9 @@ const (
 type Client struct {
 	hub  *Hub
 	conn *websocket.Conn
+	// role is set once at construction and never written again, so the hub
+	// goroutine may read it without coordination.
+	role Role
 	// send is written to only by the hub goroutine and closed only by the
 	// hub goroutine, so there is no race on close.
 	send chan []byte
@@ -40,10 +43,11 @@ type Client struct {
 
 // NewClient wraps an upgraded connection. It does not start any goroutines;
 // call Run for that.
-func NewClient(hub *Hub, conn *websocket.Conn) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, role Role) *Client {
 	return &Client{
 		hub:  hub,
 		conn: conn,
+		role: role,
 		send: make(chan []byte, sendBuffer),
 	}
 }

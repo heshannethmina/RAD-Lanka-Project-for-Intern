@@ -24,10 +24,16 @@ const maxTitleLen = 200
 // actually has more than this many interviews.
 const roomListLimit = 200
 
+// maxPromptLen bounds the question. Generous — an interviewer may paste a
+// whole problem statement — but not unbounded, since it is relayed to everyone
+// in the room on every keystroke.
+const maxPromptLen = 20_000
+
 type roomJSON struct {
 	ID        string     `json:"id"`
 	Title     string     `json:"title"`
 	Language  string     `json:"language"`
+	Prompt    string     `json:"prompt"`
 	CreatedAt time.Time  `json:"created_at"`
 	ClosedAt  *time.Time `json:"closed_at"`
 	Open      bool       `json:"open"`
@@ -40,6 +46,7 @@ func toRoomJSON(r *store.Room) roomJSON {
 		ID:        r.ID,
 		Title:     r.Title,
 		Language:  r.Language,
+		Prompt:    r.Prompt,
 		CreatedAt: r.CreatedAt,
 		ClosedAt:  r.ClosedAt,
 		Open:      r.Open(),
@@ -236,6 +243,46 @@ func JoinRoom(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, toRoomJSON(room))
+	}
+}
+
+// UpdatePrompt saves the interview question.
+//
+// The WebSocket already relays prompt edits live, so this is the durable half:
+// the relay is what the candidate sees immediately, this is what survives a
+// reload. Both enforce the same rule — only the owner may change it.
+func UpdatePrompt(s *store.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, ok := UserFrom(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "not signed in")
+			return
+		}
+
+		var req struct {
+			Prompt string `json:"prompt"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxPromptLen+4*1024)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "malformed request body")
+			return
+		}
+		if len(req.Prompt) > maxPromptLen {
+			writeError(w, http.StatusBadRequest, "the question is too long")
+			return
+		}
+
+		err := s.UpdatePrompt(r.Context(), r.PathValue("roomID"), u.ID, req.Prompt)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "no such room")
+			return
+		}
+		if err != nil {
+			log.Printf("api: update prompt: %v", err)
+			writeError(w, http.StatusInternalServerError, "could not save the question")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

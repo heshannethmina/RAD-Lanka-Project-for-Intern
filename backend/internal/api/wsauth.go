@@ -22,9 +22,9 @@ import (
 // has no reason to tell us which it holds: the room page passes whatever it
 // has, and the candidate page only ever has an invite.
 func RoomAuthorizer(s *store.Store) ws.Authorizer {
-	return func(ctx context.Context, roomID, token string) error {
+	return func(ctx context.Context, roomID, token string) (ws.Role, error) {
 		if token == "" {
-			return ws.ErrUnauthorized
+			return "", ws.ErrUnauthorized
 		}
 		hash := auth.HashToken(token)
 
@@ -36,23 +36,23 @@ func RoomAuthorizer(s *store.Store) ws.Authorizer {
 		case err == nil:
 			room, err := s.RoomByID(ctx, roomID)
 			if errors.Is(err, store.ErrNotFound) {
-				return ws.ErrUnauthorized
+				return "", ws.ErrUnauthorized
 			}
 			if err != nil {
-				return fmt.Errorf("authorize: room by id: %w", err)
+				return "", fmt.Errorf("authorize: room by id: %w", err)
 			}
 			if room.OwnerID != u.ID {
-				return ws.ErrUnauthorized
+				return "", ws.ErrUnauthorized
 			}
 			// An owner may rejoin a room they have closed — to re-read it, or
 			// because they closed it by accident. A candidate may not.
-			return nil
+			return ws.RoleInterviewer, nil
 
 		case errors.Is(err, store.ErrNotFound):
 			// Not a session token; fall through and try it as an invite.
 
 		default:
-			return fmt.Errorf("authorize: session lookup: %w", err)
+			return "", fmt.Errorf("authorize: session lookup: %w", err)
 		}
 
 		// Candidate. RoomByInvite checks the token against this room and that
@@ -60,10 +60,10 @@ func RoomAuthorizer(s *store.Store) ws.Authorizer {
 		// be replayed here.
 		if _, err := s.RoomByInvite(ctx, roomID, hash); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
-				return ws.ErrUnauthorized
+				return "", ws.ErrUnauthorized
 			}
-			return fmt.Errorf("authorize: invite lookup: %w", err)
+			return "", fmt.Errorf("authorize: invite lookup: %w", err)
 		}
-		return nil
+		return ws.RoleCandidate, nil
 	}
 }

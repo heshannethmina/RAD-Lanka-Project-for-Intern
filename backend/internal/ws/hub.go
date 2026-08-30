@@ -27,6 +27,9 @@ type Hub struct {
 	// Owned by Run. Do not touch from any other goroutine.
 	clients  map[*Client]struct{}
 	document string
+	// prompt is the interview question. Unlike a run result it is room state,
+	// so a late joiner gets it in their snapshot rather than missing it.
+	prompt string
 	// presenceDirty means the client set changed and the room has not been
 	// told yet. Set it instead of broadcasting inline: a drop can happen
 	// deep inside a broadcast's range loop, and re-entering broadcast from
@@ -73,7 +76,12 @@ func (h *Hub) Run() {
 			h.clients[c] = struct{}{}
 			// A late joiner needs the current document before anything else,
 			// otherwise it would sit on an empty buffer until someone types.
-			h.sendTo(c, Message{Type: TypeSnapshot, Text: h.document})
+			h.sendTo(c, Message{
+				Type:   TypeSnapshot,
+				Text:   h.document,
+				Prompt: h.prompt,
+				Role:   string(c.role),
+			})
 			h.presenceDirty = true
 			log.Printf("ws: %s: client joined (%d in room)", h.roomID, len(h.clients))
 
@@ -118,6 +126,20 @@ func (h *Hub) apply(in inbound) {
 		// The author already has this text locally; echoing it back would
 		// fight with their cursor.
 		h.broadcast(Message{Type: TypeEdit, Text: msg.Text}, in.client)
+
+	case TypePrompt:
+		// Only the interviewer sets the question. A candidate sending this is
+		// ignored rather than disconnected: a buggy or malicious client should
+		// not be able to end someone's interview, and there is nothing useful
+		// the candidate could do about an error anyway.
+		if in.client.role != RoleInterviewer {
+			log.Printf("ws: %s: ignoring prompt from a %s", h.roomID, in.client.role)
+			return
+		}
+		h.prompt = msg.Prompt
+		// The author already has the text they just typed; echoing it back
+		// would fight with their cursor, exactly as with an edit.
+		h.broadcast(Message{Type: TypePrompt, Prompt: msg.Prompt}, in.client)
 
 	case TypeResult:
 		// Relayed, not stored. A run result is a moment, not part of the

@@ -16,6 +16,8 @@ type Room struct {
 	OwnerID   int64
 	Title     string
 	Language  string
+	// Prompt is the interview question. Only the owner may change it.
+	Prompt    string
 	CreatedAt time.Time
 	// ClosedAt is nil while the room still accepts joins.
 	ClosedAt *time.Time
@@ -35,9 +37,9 @@ func (s *Store) CreateRoom(ctx context.Context, id string, ownerID int64, title,
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO rooms (id, owner_id, title, language, invite_token_hash)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, owner_id, title, language, created_at, closed_at
+		RETURNING id, owner_id, title, language, prompt, created_at, closed_at
 	`, id, ownerID, title, language, inviteTokenHash).
-		Scan(&r.ID, &r.OwnerID, &r.Title, &r.Language, &r.CreatedAt, &r.ClosedAt)
+		Scan(&r.ID, &r.OwnerID, &r.Title, &r.Language, &r.Prompt, &r.CreatedAt, &r.ClosedAt)
 	if err != nil {
 		return nil, fmt.Errorf("store: create room: %w", err)
 	}
@@ -49,10 +51,10 @@ func (s *Store) CreateRoom(ctx context.Context, id string, ownerID int64, title,
 func (s *Store) RoomByID(ctx context.Context, id string) (*Room, error) {
 	var r Room
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, owner_id, title, language, created_at, closed_at
+		SELECT id, owner_id, title, language, prompt, created_at, closed_at
 		FROM rooms
 		WHERE id = $1
-	`, id).Scan(&r.ID, &r.OwnerID, &r.Title, &r.Language, &r.CreatedAt, &r.ClosedAt)
+	`, id).Scan(&r.ID, &r.OwnerID, &r.Title, &r.Language, &r.Prompt, &r.CreatedAt, &r.ClosedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -71,11 +73,11 @@ func (s *Store) RoomByID(ctx context.Context, id string) (*Room, error) {
 func (s *Store) RoomByInvite(ctx context.Context, id string, inviteTokenHash []byte) (*Room, error) {
 	var r Room
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, owner_id, title, language, created_at, closed_at
+		SELECT id, owner_id, title, language, prompt, created_at, closed_at
 		FROM rooms
 		WHERE id = $1 AND invite_token_hash = $2 AND closed_at IS NULL
 	`, id, inviteTokenHash).
-		Scan(&r.ID, &r.OwnerID, &r.Title, &r.Language, &r.CreatedAt, &r.ClosedAt)
+		Scan(&r.ID, &r.OwnerID, &r.Title, &r.Language, &r.Prompt, &r.CreatedAt, &r.ClosedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -89,7 +91,7 @@ func (s *Store) RoomByInvite(ctx context.Context, id string, inviteTokenHash []b
 // RoomsByOwner lists an interviewer's rooms, newest first.
 func (s *Store) RoomsByOwner(ctx context.Context, ownerID int64, limit int) ([]Room, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, owner_id, title, language, created_at, closed_at
+		SELECT id, owner_id, title, language, prompt, created_at, closed_at
 		FROM rooms
 		WHERE owner_id = $1
 		ORDER BY created_at DESC
@@ -105,7 +107,7 @@ func (s *Store) RoomsByOwner(ctx context.Context, ownerID int64, limit int) ([]R
 	out := []Room{}
 	for rows.Next() {
 		var r Room
-		if err := rows.Scan(&r.ID, &r.OwnerID, &r.Title, &r.Language, &r.CreatedAt, &r.ClosedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.OwnerID, &r.Title, &r.Language, &r.Prompt, &r.CreatedAt, &r.ClosedAt); err != nil {
 			return nil, fmt.Errorf("store: scan room: %w", err)
 		}
 		out = append(out, r)
@@ -126,6 +128,25 @@ func (s *Store) CloseRoom(ctx context.Context, id string, ownerID int64) error {
 	`, id, ownerID)
 	if err != nil {
 		return fmt.Errorf("store: close room: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdatePrompt changes the interview question.
+//
+// Scoped to ownerID: a candidate holding an invite must not be able to rewrite
+// the question they are being asked. The WebSocket enforces the same rule for
+// the live relay; this is the durable half.
+func (s *Store) UpdatePrompt(ctx context.Context, id string, ownerID int64, prompt string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE rooms SET prompt = $3
+		WHERE id = $1 AND owner_id = $2
+	`, id, ownerID, prompt)
+	if err != nil {
+		return fmt.Errorf("store: update prompt: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

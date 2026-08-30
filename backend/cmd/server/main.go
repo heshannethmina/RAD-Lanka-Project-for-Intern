@@ -95,12 +95,14 @@ func main() {
 	authed.Handle("GET /api/rooms/{roomID}", api.GetRoom(db))
 	authed.Handle("DELETE /api/rooms/{roomID}", api.CloseRoom(db))
 	authed.Handle("POST /api/rooms/{roomID}/invite", api.RotateInvite(db))
+	authed.Handle("PUT /api/rooms/{roomID}/prompt", api.UpdatePrompt(db))
 	// ServeMux prefers the more specific pattern, so the public
 	// /api/rooms/{roomID}/join above still wins over this catch-all.
 	apiMux.Handle("/api/me", api.RequireAuth(db, authed))
 	apiMux.Handle("/api/rooms", api.RequireAuth(db, authed))
 	apiMux.Handle("/api/rooms/{roomID}", api.RequireAuth(db, authed))
 	apiMux.Handle("/api/rooms/{roomID}/invite", api.RequireAuth(db, authed))
+	apiMux.Handle("/api/rooms/{roomID}/prompt", api.RequireAuth(db, authed))
 
 	// WebSocket upgrades ignore CORS entirely, so this is the only thing
 	// stopping a hostile page from opening a socket in a victim's browser.

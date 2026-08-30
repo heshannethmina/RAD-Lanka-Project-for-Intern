@@ -35,7 +35,7 @@ func CORS(origins string, next http.Handler) http.Handler {
 		}
 
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			// Authorization is not a CORS-safelisted header, so without it
 			// every authenticated call fails at the preflight.
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
