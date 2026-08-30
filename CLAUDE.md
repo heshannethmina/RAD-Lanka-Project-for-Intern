@@ -127,6 +127,37 @@ Backend env: `ADDR` (`:8080`), `JUDGE0_URL` (`http://localhost:2358`),
 `CORS_ORIGIN` (`*`) — a comma-separated allowlist that gates **both** the REST
 CORS headers and WebSocket `CheckOrigin`. `*` is local development only.
 
+`PORT` overrides `ADDR` when set, because Render and every other PaaS picks the
+port itself and routes to it — a service listening anywhere else looks dead to
+their health check.
+
+`JUDGE0_HEADERS` authenticates a **hosted** Judge0, as comma-separated
+`Name: Value` pairs. One variable rather than a pair per provider, because each
+wants different headers and hard-coding vendor names would mean editing Go to
+change hosting:
+
+```
+# RapidAPI
+JUDGE0_URL=https://judge0-ce.p.rapidapi.com
+JUDGE0_HEADERS=X-RapidAPI-Key: <key>, X-RapidAPI-Host: judge0-ce.p.rapidapi.com
+
+# Judge0 Cloud, or self-hosted with AUTHN_TOKEN set
+JUDGE0_HEADERS=X-Auth-Token: <token>
+```
+
+Parsing splits on the first colon only, so a value may contain one; it may not
+contain a comma. The headers go on the poll as well as the submit —
+authenticating only the submit fails confusingly, with the submission accepted
+and every poll for its verdict rejected. Malformed values are fatal at startup
+rather than at first Run, and the error never quotes the value, which is a
+credential.
+
+Going hosted means **candidate code leaves your infrastructure**, which is a
+product decision as much as a technical one. It is also the only way to see the
+Run button work without a Linux host — and the language IDs must be re-checked
+against `GET /languages` first, since ours are pinned to the `1.13.0` image and
+a hosted instance runs something newer.
+
 | Route | Auth | Purpose |
 |---|---|---|
 | `GET /healthz` | — | liveness |

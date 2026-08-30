@@ -66,9 +66,17 @@ func main() {
 	rooms := ws.NewRegistry()
 	go rooms.Run()
 
-	// Code execution goes to Judge0, in its own container. The Go process
-	// never runs submitted code itself.
-	judge := judge0.New(judgeURL)
+	// Code execution goes to Judge0. The Go process never runs submitted code
+	// itself, whether Judge0 is a container next door or somebody else's API.
+	//
+	// JUDGE0_HEADERS carries whatever a hosted instance needs for auth, as
+	// comma-separated "Name: Value" pairs — see judge0.ParseHeaders. A local
+	// instance needs none. It holds a secret, so it is never logged.
+	judgeHeaders, err := judge0.ParseHeaders(os.Getenv("JUDGE0_HEADERS"))
+	if err != nil {
+		log.Fatalf("server: JUDGE0_HEADERS: %v", err)
+	}
+	judge := judge0.New(judgeURL, judgeHeaders...)
 
 	// Public: no session required.
 	apiMux := http.NewServeMux()

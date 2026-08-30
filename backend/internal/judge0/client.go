@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -57,19 +58,106 @@ type Client struct {
 	baseURL string
 	http    *http.Client
 
+	// headers is sent with every request. A self-hosted Judge0 on localhost
+	// needs none; a hosted one needs whatever it uses for auth.
+	headers map[string]string
+
 	// pollInterval is how often we ask whether a submission has finished, and
 	// maxWait caps the whole run. Both are fields so tests can shrink them.
 	pollInterval time.Duration
 	maxWait      time.Duration
 }
 
-func New(baseURL string) *Client {
-	return &Client{
+// Option configures a Client. Functional options rather than a wider New, so
+// that adding one later does not break every call site again.
+type Option func(*Client)
+
+// WithHeader adds a header sent on every request to Judge0.
+//
+// This is how a hosted instance is authenticated, and which header to use
+// depends on who is hosting it:
+//
+//	RapidAPI      X-RapidAPI-Key plus X-RapidAPI-Host
+//	Judge0 Cloud  X-Auth-Token
+//	self-hosted   none, unless AUTHN_TOKEN is set in judge0.conf
+//
+// Nothing here knows or cares which; the header names come from configuration
+// so a new provider needs no code change.
+func WithHeader(name, value string) Option {
+	return func(c *Client) {
+		if name == "" || value == "" {
+			// Silently dropping an empty pair keeps callers from having to
+			// guard every optional variable before passing it in.
+			return
+		}
+		if c.headers == nil {
+			c.headers = make(map[string]string)
+		}
+		c.headers[name] = value
+	}
+}
+
+func New(baseURL string, opts ...Option) *Client {
+	c := &Client{
 		baseURL:      baseURL,
 		http:         &http.Client{Timeout: 15 * time.Second},
 		pollInterval: 250 * time.Millisecond,
 		maxWait:      20 * time.Second,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// ParseHeaders reads the JUDGE0_HEADERS configuration format: comma-separated
+// "Name: Value" pairs.
+//
+//	X-RapidAPI-Key: abc123, X-RapidAPI-Host: judge0-ce.p.rapidapi.com
+//
+// One variable rather than a pair per provider, because the set of headers
+// differs between them and hard-coding vendor names here would mean editing Go
+// to change hosting.
+//
+// Only the first colon splits, so a value may contain one; a value may not
+// contain a comma. No token format in use does, and the alternative — a
+// quoting scheme in an environment variable — is worse than the limitation.
+//
+// The returned error never quotes the value, because it holds a secret.
+func ParseHeaders(s string) ([]Option, error) {
+	var opts []Option
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		name, value, found := strings.Cut(pair, ":")
+		if !found {
+			return nil, fmt.Errorf("judge0: header %d is missing a colon", len(opts)+1)
+		}
+		name, value = strings.TrimSpace(name), strings.TrimSpace(value)
+		if name == "" || value == "" {
+			return nil, fmt.Errorf("judge0: header %q has an empty name or value", name)
+		}
+		opts = append(opts, WithHeader(name, value))
+	}
+	return opts, nil
+}
+
+// newRequest builds a request carrying the configured headers.
+//
+// Both the submit and the poll path go through here. Authenticating only the
+// submit would fail confusingly: the submission would be accepted and every
+// poll for its verdict rejected.
+func (c *Client) newRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("judge0: build request: %w", err)
+	}
+	for name, value := range c.headers {
+		req.Header.Set(name, value)
+	}
+	return req, nil
 }
 
 type submitRequest struct {
@@ -143,9 +231,9 @@ func (c *Client) submit(ctx context.Context, languageID int, source string) (str
 	// wait=false: Judge0's synchronous mode is documented as unreliable under
 	// load, so we submit and poll instead.
 	url := c.baseURL + "/submissions?base64_encoded=false&wait=false"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := c.newRequest(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("judge0: build request: %w", err)
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -193,9 +281,9 @@ func (c *Client) poll(ctx context.Context, token string) (*Result, error) {
 }
 
 func (c *Client) fetch(ctx context.Context, url string) (*submission, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := c.newRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("judge0: build request: %w", err)
+		return nil, err
 	}
 
 	resp, err := c.http.Do(req)

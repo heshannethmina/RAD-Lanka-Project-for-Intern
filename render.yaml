@@ -32,6 +32,22 @@ services:
           name: syncr-db
           property: connectionString
 
+      # Optional: point at a hosted Judge0 to make the Run button work here.
+      # Leave both unset and /api/run answers 502, which is the default.
+      #
+      #   JUDGE0_URL     https://judge0-ce.p.rapidapi.com
+      #   JUDGE0_HEADERS X-RapidAPI-Key: <key>, X-RapidAPI-Host: judge0-ce.p.rapidapi.com
+      #
+      # Re-check the language IDs first: ours are pinned to the 1.13.0 image
+      # and a hosted instance runs something newer. GET /languages and diff
+      # 60/63/71 against Go, JavaScript and Python.
+      #
+      # Note that candidate code then leaves your infrastructure.
+      - key: JUDGE0_URL
+        sync: false
+      - key: JUDGE0_HEADERS
+        sync: false
+
       # The web origin allowed to call this API *and* to open a WebSocket.
       # sync: false means Render will not manage it — set it by hand once the
       # Vercel URL exists, because it does not until the frontend is deployed.
