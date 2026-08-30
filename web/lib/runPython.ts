@@ -30,7 +30,7 @@ export type PythonResult = {
   timedOut: boolean;
 };
 
-type WorkerDone = { type: "done"; output: string; failed: boolean };
+type WorkerDone = { type: "done"; output: string; failed: boolean; nonce?: string };
 type WorkerReady = { type: "ready" };
 type WorkerError = { type: "error"; message: string };
 type WorkerMessage = WorkerDone | WorkerReady | WorkerError;
@@ -113,6 +113,7 @@ export function runPython(source: string): Promise<PythonResult> {
   busy = true;
 
   return new Promise<PythonResult>((resolve) => {
+	    const nonce = crypto.randomUUID();
     // settle guarantees exactly one resolution and one cleanup, however the
     // run ends — message, error, or timeout.
     let settled = false;
@@ -129,6 +130,7 @@ export function runPython(source: string): Promise<PythonResult> {
     const onMessage = (event: MessageEvent<WorkerMessage>) => {
       const msg = event.data;
       if (msg.type === "ready") return; // A prefetch finishing; not our run.
+	      if (msg.type === "done" && msg.nonce !== nonce) return;
       if (msg.type === "error") {
         settle({ output: msg.message, failed: true, timedOut: false });
         return;
@@ -162,6 +164,6 @@ export function runPython(source: string): Promise<PythonResult> {
 
     w.addEventListener("message", onMessage);
     w.addEventListener("error", onError);
-    w.postMessage({ type: "run", source });
+    w.postMessage({ type: "run", source, nonce });
   });
 }

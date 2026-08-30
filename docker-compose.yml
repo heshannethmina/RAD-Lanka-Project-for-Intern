@@ -12,11 +12,11 @@ name: interview-platform-judge0
 
 services:
   judge0:
-    image: judge0/judge0:1.13.0
+    image: judge0/judge0:1.13.1
     volumes:
       - ./judge0.conf:/judge0.conf:ro
     ports:
-      - "2358:2358"
+      - "127.0.0.1:2358:2358"
     privileged: true
     restart: unless-stopped
     depends_on:
@@ -24,7 +24,7 @@ services:
       - redis
 
   judge0-workers:
-    image: judge0/judge0:1.13.0
+    image: judge0/judge0:1.13.1
     command: ["./scripts/workers"]
     volumes:
       - ./judge0.conf:/judge0.conf:ro

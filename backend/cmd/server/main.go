@@ -39,7 +39,7 @@ func main() {
 	// A comma-separated allowlist. "*" is local development only: the API now
 	// carries bearer tokens, so a deployment must name its web origin here.
 	// The same value gates WebSocket upgrades, which CORS does not cover.
-	corsOrigin := env("CORS_ORIGIN", "*")
+	corsOrigin := env("CORS_ORIGIN", "http://localhost:3000")
 	databaseURL := env("DATABASE_URL", "postgres://syncr:syncrdev@localhost:5433/syncr")
 
 	// The application database — users, sessions, rooms. Not Judge0's, which
@@ -76,6 +76,15 @@ func main() {
 		}
 	})
 	go rooms.Run()
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if _, err := db.DeleteExpiredSessions(cleanupCtx); err != nil { log.Printf("server: session cleanup: %v", err) }
+			cancel()
+		}
+	}()
 
 	// Code execution goes to Judge0. The Go process never runs submitted code
 	// itself, whether Judge0 is a container next door or somebody else's API.
@@ -91,12 +100,12 @@ func main() {
 
 	// Public: no session required.
 	apiMux := http.NewServeMux()
-	apiMux.Handle("POST /api/auth/register", api.Register(db))
-	apiMux.Handle("POST /api/auth/login", api.Login(db))
+	apiMux.Handle("POST /api/auth/register", api.RateLimit(api.Register(db), 5, 10*time.Minute))
+	apiMux.Handle("POST /api/auth/login", api.RateLimit(api.Login(db), 10, 5*time.Minute))
 	apiMux.Handle("POST /api/auth/logout", api.Logout(db))
 	// The candidate's half of a shareable link: an invite token, no account.
 	apiMux.Handle("GET /api/rooms/{roomID}/join", api.JoinRoom(db))
-	apiMux.Handle("POST /api/run", api.Run(judge))
+	apiMux.Handle("POST /api/run", api.RateLimit(api.Run(judge, api.RoomAuthorizer(db)), 30, time.Minute))
 
 	// Everything an interviewer does with their own rooms.
 	authed := http.NewServeMux()
@@ -131,7 +140,7 @@ func main() {
 	mux.Handle("GET /ws/{roomID}", ws.Handler(rooms, api.RoomAuthorizer(db)))
 	// Wrapped rather than mounted directly so the CORS preflight is answered
 	// for every /api/ route, including ones that do not exist yet.
-	mux.Handle("/api/", api.CORS(corsOrigin, apiMux))
+	mux.Handle("/api/", api.SecurityHeaders(api.CORS(corsOrigin, apiMux)))
 
 	srv := &http.Server{
 		Addr:    addr,
@@ -139,6 +148,9 @@ func main() {
 		// No WriteTimeout: it would kill long-lived WebSocket connections.
 		// The per-write deadline in the client's write pump covers us instead.
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    16 * 1024,
 	}
 
 	go func() {

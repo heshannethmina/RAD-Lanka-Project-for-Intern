@@ -23,6 +23,8 @@ export class RunError extends Error {}
 export async function runCode(
   language: string,
   source: string,
+  roomId: string,
+  token: string,
   signal?: AbortSignal,
 ): Promise<RunResult> {
   let response: Response;
@@ -30,7 +32,7 @@ export async function runCode(
     response = await fetch(`${API_BASE}/api/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ language, source }),
+      body: JSON.stringify({ language, source, room_id: roomId, token }),
       signal,
     });
   } catch (cause) {

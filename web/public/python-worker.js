@@ -39,7 +39,7 @@ function loadPyodideOnce() {
 }
 
 self.onmessage = async (event) => {
-  const { type, source } = event.data ?? {};
+  const { type, source, nonce } = event.data ?? {};
 
   if (type === "warm") {
     // Prefetch so the first real run is not also a ~6MB download.
@@ -60,6 +60,7 @@ self.onmessage = async (event) => {
   } catch {
     self.postMessage({
       type: "done",
+      nonce,
       output: "Could not load the Python runtime. Check your connection and try again.",
       failed: true,
     });
@@ -89,6 +90,7 @@ self.onmessage = async (event) => {
     const output = chunks.join("\n").trimEnd();
     self.postMessage({
       type: "done",
+      nonce,
       output: output === "" ? "(no output)" : output,
       failed: false,
     });
@@ -99,6 +101,7 @@ self.onmessage = async (event) => {
     const trace = (err && err.message ? err.message : String(err)).trimEnd();
     self.postMessage({
       type: "done",
+      nonce,
       output: printed ? `${printed}\n${trace}` : trace,
       failed: true,
     });

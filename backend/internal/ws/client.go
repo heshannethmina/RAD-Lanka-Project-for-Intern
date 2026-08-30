@@ -18,7 +18,8 @@ const (
 
 	// maxMessageSize caps a single frame. Edits carry the whole document,
 	// so this is generous by design.
-	maxMessageSize = 512 * 1024
+	maxMessageSize       = 128 * 1024
+	maxMessagesPerSecond = 60
 
 	// sendBuffer absorbs a short burst of broadcasts. A client that fills
 	// it is too slow and gets dropped rather than stalling the hub.
@@ -38,7 +39,9 @@ type Client struct {
 	role Role
 	// send is written to only by the hub goroutine and closed only by the
 	// hub goroutine, so there is no race on close.
-	send chan []byte
+	send           chan []byte
+	windowStarted  time.Time
+	windowMessages int
 }
 
 // NewClient wraps an upgraded connection. It does not start any goroutines;
@@ -76,6 +79,15 @@ func (c *Client) readPump() {
 	})
 
 	for {
+		now := time.Now()
+		if c.windowStarted.IsZero() || now.Sub(c.windowStarted) >= time.Second {
+			c.windowStarted = now
+			c.windowMessages = 0
+		}
+		c.windowMessages++
+		if c.windowMessages > maxMessagesPerSecond {
+			return
+		}
 		_, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err,

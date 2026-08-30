@@ -27,7 +27,7 @@ services:
     ports:
       # 5433, not 5432: Judge0's Postgres is not published, but a developer
       # machine very often already has something on 5432.
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - app-postgres:/var/lib/postgresql/data/
     restart: unless-stopped

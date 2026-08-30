@@ -1,7 +1,7 @@
 /**
  * Client for the Go REST API.
  *
- * The session token lives in localStorage and is sent as an Authorization
+ * The session token lives in sessionStorage and is sent as an Authorization
  * header. That is a deliberate trade made on the server side — see the note at
  * the top of backend/internal/api/auth.go. The short version: the web app and
  * the API are different origins in every environment, so a cookie would need
@@ -89,7 +89,7 @@ export function getToken(): string | null {
   // Guarded for server rendering, where there is no localStorage at all.
   if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(TOKEN_KEY);
+    return window.sessionStorage.getItem(TOKEN_KEY);
   } catch {
     // Private mode and "block site data" both throw rather than return null.
     return null;
@@ -99,8 +99,8 @@ export function getToken(): string | null {
 export function setToken(token: string | null): void {
   if (typeof window === "undefined") return;
   try {
-    if (token === null) window.localStorage.removeItem(TOKEN_KEY);
-    else window.localStorage.setItem(TOKEN_KEY, token);
+    if (token === null) window.sessionStorage.removeItem(TOKEN_KEY);
+    else window.sessionStorage.setItem(TOKEN_KEY, token);
   } catch {
     // Not being able to persist is survivable: the session lasts the tab.
   }

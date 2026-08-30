@@ -51,19 +51,25 @@ type Grant struct {
 	// EndsAt is when the interview must stop. Zero means no limit, which is
 	// what an unmetered plan looks like from here.
 	EndsAt time.Time
+	// CanRun is false for closed interviewer rooms. It is kept separate from
+	// the role because owners may still reconnect read-only after closing.
+	CanRun bool
+	// OnAccepted is invoked only after a WebSocket upgrade succeeds. Keeping
+	// side effects here prevents failed handshakes from starting interviews.
+	OnAccepted func(context.Context) error
 }
 
 // AllowAll is an Authorizer that admits everyone as an interviewer. It exists
 // for tests, and is named so that using it in the server is obviously wrong at
 // the call site.
 func AllowAll(context.Context, string, string) (Grant, error) {
-	return Grant{Role: RoleInterviewer}, nil
+	return Grant{Role: RoleInterviewer, CanRun: true}, nil
 }
 
 // AllowAllAsCandidate is AllowAll with the lesser role, for tests that need to
 // prove a candidate is refused something.
 func AllowAllAsCandidate(context.Context, string, string) (Grant, error) {
-	return Grant{Role: RoleCandidate}, nil
+	return Grant{Role: RoleCandidate, CanRun: true}, nil
 }
 
 // Upgrader is exported so the server can tighten CheckOrigin at startup, where
@@ -160,6 +166,13 @@ func Handler(reg *Registry, authorize Authorizer) http.HandlerFunc {
 			log.Printf("ws: upgrade: %v", err)
 			return
 		}
+		if grant.OnAccepted != nil {
+			if err := grant.OnAccepted(r.Context()); err != nil {
+				_ = conn.Close()
+				log.Printf("ws: accept room %q: %v", roomID, err)
+				return
+			}
+		}
 
 		hub := reg.Join(roomID)
 		// Leave must run after Run returns. By then the client's read pump has
@@ -172,7 +185,12 @@ func Handler(reg *Registry, authorize Authorizer) http.HandlerFunc {
 		hub.SetDeadline(grant.EndsAt)
 
 		c := NewClient(hub, conn, grant.Role)
-		hub.Register(c)
+		if !hub.Register(c) {
+			_ = conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "room is full"), time.Now().Add(time.Second))
+			_ = conn.Close()
+			return
+		}
 		c.Run()
 	}
 }

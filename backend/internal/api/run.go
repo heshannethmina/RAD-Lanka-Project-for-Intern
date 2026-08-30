@@ -9,12 +9,15 @@ import (
 	"net/http"
 
 	"github.com/heshannethmina/interview-platform/backend/internal/judge0"
+	"github.com/heshannethmina/interview-platform/backend/internal/ws"
 )
 
 // runRequest is what the room page posts when someone presses Run.
 type runRequest struct {
 	Language string `json:"language"`
 	Source   string `json:"source"`
+	RoomID   string `json:"room_id"`
+	Token    string `json:"token"`
 }
 
 // errorResponse keeps failures in the same shape as successes, so the client
@@ -32,7 +35,7 @@ const maxBodyBytes = judge0.MaxSourceBytes + 4*1024
 // The Go process never executes anything itself — it forwards to a sandbox
 // that runs in a separate container, which is the whole reason Judge0 is
 // here rather than an exec.Command.
-func Run(client *judge0.Client) http.HandlerFunc {
+func Run(client *judge0.Client, authorizers ...ws.Authorizer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
@@ -51,6 +54,23 @@ func Run(client *judge0.Client) http.HandlerFunc {
 		if req.Source == "" {
 			writeError(w, http.StatusBadRequest, "no source to run")
 			return
+		}
+		if len(req.Source) > judge0.MaxSourceBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, "source too large")
+			return
+		}
+		if len(authorizers) > 0 {
+			grant, err := authorizers[0](r.Context(), req.RoomID, req.Token)
+			if err != nil || !grant.CanRun {
+				writeError(w, http.StatusUnauthorized, "room access required")
+				return
+			}
+			if grant.OnAccepted != nil {
+				if err := grant.OnAccepted(r.Context()); err != nil {
+					writeError(w, http.StatusForbidden, "room is not available")
+					return
+				}
+			}
 		}
 
 		result, err := client.Run(r.Context(), req.Language, req.Source)

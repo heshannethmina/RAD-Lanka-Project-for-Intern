@@ -3,6 +3,7 @@ package ws
 import (
 	"encoding/json"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -51,9 +52,10 @@ type Hub struct {
 	// there would iterate the map while it is being mutated.
 	presenceDirty bool
 
-	register   chan *Client
-	unregister chan *Client
-	inbound    chan inbound
+	register     chan *Client
+	registerAcks sync.Map
+	unregister   chan *Client
+	inbound      chan inbound
 	// quit is closed by the registry when the last client has left.
 	quit chan struct{}
 
@@ -62,6 +64,8 @@ type Hub struct {
 	// Postgres, the same way Authorizer keeps it ignorant of what a token is.
 	onEnded func(roomID string)
 }
+
+const MaxClientsPerRoom = 100
 
 // NewHub builds a hub for roomID with an empty document. Call Run in its own
 // goroutine before registering anyone.
@@ -86,7 +90,12 @@ func (h *Hub) Stop() { close(h.quit) }
 // Register hands a new client to the hub goroutine and blocks until it is
 // accepted, so the caller knows the client is in the room before it starts
 // pumping.
-func (h *Hub) Register(c *Client) { h.register <- c }
+func (h *Hub) Register(c *Client) bool {
+	accepted := make(chan bool, 1)
+	h.registerAcks.Store(c, accepted)
+	h.register <- c
+	return <-accepted
+}
 
 // SetDeadline tells the hub when the interview must stop.
 //
@@ -137,6 +146,15 @@ func (h *Hub) Run() {
 			h.expire()
 
 		case c := <-h.register:
+			if len(h.clients) >= MaxClientsPerRoom {
+				if ack, ok := h.registerAcks.LoadAndDelete(c); ok {
+					ack.(chan bool) <- false
+				}
+				continue
+			}
+			if ack, ok := h.registerAcks.LoadAndDelete(c); ok {
+				ack.(chan bool) <- true
+			}
 			h.clients[c] = struct{}{}
 			// A late joiner needs the current document before anything else,
 			// otherwise it would sit on an empty buffer until someone types.
@@ -226,6 +244,9 @@ func (h *Hub) apply(in inbound) {
 	if h.ended {
 		return
 	}
+	if len(msg.Text) > maxMessageSize {
+		return
+	}
 	switch msg.Type {
 	case TypeEdit:
 		h.document = msg.Text
@@ -252,6 +273,12 @@ func (h *Hub) apply(in inbound) {
 		// their own business, and relaying it would put noise in front of the
 		// person who is supposed to be reading the signal.
 		if in.client.role != RoleCandidate {
+			return
+		}
+		if msg.Kind != ActivityAway && msg.Kind != ActivityBack && msg.Kind != ActivityPaste {
+			return
+		}
+		if msg.Ms < 0 || msg.Ms > 24*60*60*1000 || msg.Lines < 0 || msg.Lines > 10000 {
 			return
 		}
 		event := h.recordActivity(msg)
