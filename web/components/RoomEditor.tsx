@@ -4,7 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { applyRemoteText, type CodeEditor } from "@/lib/applyRemoteText";
-import { useRoomSocket, type ConnectionStatus, type Role } from "@/lib/useRoomSocket";
+import {
+  useRoomSocket,
+  type ActivitySummary,
+  type ConnectionStatus,
+  type Role,
+} from "@/lib/useRoomSocket";
+import { formatAway, useActivityReporter } from "@/lib/useActivityReporter";
 import { api } from "@/lib/api";
 import SplitPane from "./SplitPane";
 import { formatRunResult, isFailure, runCode, RunError } from "@/lib/runCode";
@@ -89,6 +95,83 @@ function Spinner() {
   );
 }
 
+/**
+ * What the interviewer sees: aggregates, not a feed.
+ *
+ * Worded as observation rather than accusation on purpose. Switching tabs is
+ * not cheating — plenty of interviewers expect a candidate to read
+ * documentation — and a badge that says "3 tab switches" invites a conclusion
+ * the data does not support. It reports what happened and leaves the judgement
+ * to the person conducting the interview.
+ */
+function ActivityBadge({ summary }: { summary: ActivitySummary }) {
+  const quiet =
+    summary.away_count === 0 && summary.paste_count === 0 && !summary.away;
+
+  if (quiet) return null;
+
+  const parts: string[] = [];
+  if (summary.away_count > 0) {
+    parts.push(
+      `Left the tab ${summary.away_count} times` +
+        (summary.away_ms > 0 ? ` (${formatAway(summary.away_ms)} total)` : ""),
+    );
+  }
+  if (summary.paste_count > 0) {
+    parts.push(`Pasted ${summary.paste_count} times`);
+  }
+
+  return (
+    <span
+      title={`${parts.join(" · ")}. A signal, not proof — people switch tabs for documentation.`}
+      className={[
+        "hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium md:inline-flex",
+        summary.away
+          ? "border-[#F5C4A0] bg-[#FFF7ED] text-[#9A5B1E]"
+          : "border-line bg-bg-subtle text-ink-muted",
+      ].join(" ")}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${summary.away ? "bg-[#D97706]" : "bg-ink-muted"}`}
+      />
+      {summary.away ? "Away now" : null}
+      {summary.away_count > 0 && (
+        <span>
+          {summary.away ? "·" : ""} {summary.away_count} away
+        </span>
+      )}
+      {summary.paste_count > 0 && (
+        <span>· {summary.paste_count} paste{summary.paste_count === 1 ? "" : "s"}</span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * What the candidate sees, always, for the whole interview.
+ *
+ * The disclosure is the feature. A candidate who knows the interviewer can see
+ * tab switches does not switch; silent monitoring catches a few people where
+ * visible monitoring prevents it, which is the actual goal. It also gives them
+ * the standing to explain a false positive — a notification stealing focus is
+ * not the same as leaving.
+ */
+function MonitoringNotice() {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-bg-subtle px-4 py-2 text-[12px] text-ink-muted">
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M8 7.25v4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="8" cy="4.9" r="0.85" fill="currentColor" />
+      </svg>
+      <span>
+        Your interviewer can see when you leave this tab and when you paste
+        code. Nothing else about your device is recorded.
+      </span>
+    </div>
+  );
+}
+
 /** Browser-side Python. Never throws: a traceback is output, not an error. */
 async function runPythonLocally(source: string) {
   const result = await runPython(source);
@@ -129,6 +212,15 @@ export default function RoomEditor({
   // briefly offers an editable question to someone who may not have one.
   const [role, setRole] = useState<Role>("candidate");
   const [prompt, setPrompt] = useState("");
+  const [activity, setActivity] = useState<ActivitySummary | null>(null);
+
+  // onDidPaste is registered once when Monaco mounts, so it would otherwise
+  // capture the role and sender from that first render — before the snapshot
+  // has said which side of the interview this is.
+  const roleRef = useRef<Role>("candidate");
+  const sendActivityRef = useRef<
+    (kind: "away" | "back" | "paste", extra?: { ms?: number; lines?: number }) => void
+  >(() => {});
   const [failed, setFailed] = useState(false);
   const [running, setRunning] = useState(false);
 
@@ -157,7 +249,7 @@ export default function RoomEditor({
     }
   }, []);
 
-  const { status, peers, sendEdit, sendResult, sendPrompt } = useRoomSocket(roomId, token, {
+  const { status, peers, sendEdit, sendResult, sendPrompt, sendActivity } = useRoomSocket(roomId, token, {
     onSnapshot: (text, send) => {
       if (text !== "") {
         write(text);
@@ -168,10 +260,12 @@ export default function RoomEditor({
       // own editor.
       send(editorRef.current?.getValue() ?? STARTER);
     },
-    onJoin: (roomPrompt, joinedAs) => {
+    onJoin: (roomPrompt, joinedAs, tally) => {
       setRole(joinedAs);
       setPrompt(roomPrompt);
+      setActivity(tally);
     },
+    onActivity: (_kind, summary) => setActivity(summary),
     onPrompt: setPrompt,
     onEdit: write,
     // Someone else pressed Run. Show what they got, so an interviewer can see
@@ -223,6 +317,16 @@ export default function RoomEditor({
     };
   }, []);
 
+  // Only the candidate is observed, and only while connected. The server
+  // drops activity frames from an interviewer regardless, so this is about not
+  // sending pointless traffic rather than about enforcement.
+  useActivityReporter(role === "candidate" && status === "open", sendActivity);
+
+  useEffect(() => {
+    roleRef.current = role;
+    sendActivityRef.current = sendActivity;
+  }, [role, sendActivity]);
+
   // Warn before the tab is closed or reloaded during a live interview.
   //
   // Worth the friction because the document is not persisted: it lives in the
@@ -272,6 +376,22 @@ export default function RoomEditor({
   const handleMount = useCallback((editor: CodeEditor, monaco: Monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+
+    // A pasted block is the highest-signal thing here. People switch tabs to
+    // read documentation that many interviewers explicitly allow; forty lines
+    // arriving at once is a different kind of event, and worth surfacing.
+    //
+    // Reported by the candidate's client only. Guarded with optional chaining
+    // because onDidPaste is not part of the editor interface this project
+    // types against, and a Monaco upgrade renaming it must not crash the room.
+    const withPaste = editor as unknown as {
+      onDidPaste?: (cb: (e: { range: { startLineNumber: number; endLineNumber: number } }) => void) => void;
+    };
+    withPaste.onDidPaste?.((e) => {
+      if (roleRef.current !== "candidate") return;
+      const lines = e.range.endLineNumber - e.range.startLineNumber + 1;
+      sendActivityRef.current("paste", { lines });
+    });
     if (pendingText.current !== null) {
       applyingRemote.current = true;
       try {
@@ -389,6 +509,8 @@ export default function RoomEditor({
 
           <PeerAvatars peers={peers} />
 
+          {role === "interviewer" && activity && <ActivityBadge summary={activity} />}
+
           <span className="h-5 w-px bg-line" />
 
           <div className="relative">
@@ -441,6 +563,8 @@ export default function RoomEditor({
           </button>
         </div>
       </header>
+
+      {role === "candidate" && <MonitoringNotice />}
 
       {/* ---------- three resizable panes ---------- */}
       {/*

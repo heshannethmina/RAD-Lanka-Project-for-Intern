@@ -30,6 +30,10 @@ type Hub struct {
 	// prompt is the interview question. Unlike a run result it is room state,
 	// so a late joiner gets it in their snapshot rather than missing it.
 	prompt string
+	// activity is the candidate's running tally. Kept here rather than in the
+	// interviewer's browser so that reloading the page does not reset it, and
+	// so a second interviewer joining sees the same numbers.
+	activity ActivitySummary
 	// presenceDirty means the client set changed and the room has not been
 	// told yet. Set it instead of broadcasting inline: a drop can happen
 	// deep inside a broadcast's range loop, and re-entering broadcast from
@@ -76,11 +80,13 @@ func (h *Hub) Run() {
 			h.clients[c] = struct{}{}
 			// A late joiner needs the current document before anything else,
 			// otherwise it would sit on an empty buffer until someone types.
+			summary := h.activity
 			h.sendTo(c, Message{
-				Type:   TypeSnapshot,
-				Text:   h.document,
-				Prompt: h.prompt,
-				Role:   string(c.role),
+				Type:     TypeSnapshot,
+				Text:     h.document,
+				Prompt:   h.prompt,
+				Role:     string(c.role),
+				Activity: &summary,
 			})
 			h.presenceDirty = true
 			log.Printf("ws: %s: client joined (%d in room)", h.roomID, len(h.clients))
@@ -141,6 +147,23 @@ func (h *Hub) apply(in inbound) {
 		// would fight with their cursor, exactly as with an edit.
 		h.broadcast(Message{Type: TypePrompt, Prompt: msg.Prompt}, in.client)
 
+	case TypeActivity:
+		// Only the candidate is observed. An interviewer switching tabs is
+		// their own business, and relaying it would put noise in front of the
+		// person who is supposed to be reading the signal.
+		if in.client.role != RoleCandidate {
+			return
+		}
+		h.recordActivity(msg)
+		summary := h.activity
+		h.broadcast(Message{
+			Type:     TypeActivity,
+			Kind:     msg.Kind,
+			Lines:    msg.Lines,
+			Ms:       msg.Ms,
+			Activity: &summary,
+		}, in.client)
+
 	case TypeResult:
 		// Relayed, not stored. A run result is a moment, not part of the
 		// document, so a client joining later gets no snapshot of it — it
@@ -154,6 +177,34 @@ func (h *Hub) apply(in inbound) {
 		// Ignore rather than error: an older or newer client should not be
 		// able to kill the room by saying something this build has never
 		// heard of.
+	}
+}
+
+// recordActivity folds one reported event into the room's tally.
+//
+// The client reports how long it was away rather than the hub timing it: the
+// hub would have to time from its own clock, and a reconnect in between would
+// make that measurement meaningless. A candidate could of course under-report,
+// but a candidate who is editing the payload is past what this feature claims
+// to catch.
+func (h *Hub) recordActivity(msg Message) {
+	switch msg.Kind {
+	case ActivityAway:
+		// Guarded so a duplicate "away" — visibilitychange and blur can both
+		// fire for one switch — is not counted twice.
+		if !h.activity.Away {
+			h.activity.Away = true
+			h.activity.AwayCount++
+		}
+	case ActivityBack:
+		if h.activity.Away {
+			h.activity.Away = false
+			if msg.Ms > 0 {
+				h.activity.AwayMs += msg.Ms
+			}
+		}
+	case ActivityPaste:
+		h.activity.PasteCount++
 	}
 }
 

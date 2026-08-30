@@ -196,6 +196,8 @@ One JSON envelope in both directions, so the client only ever parses one shape:
 | `edit` | both | `text` | Full document after an edit. Server relays to everyone **except** the author |
 | `presence` | server → client | `clients` | Number of clients currently in the room |
 | `result` | both | `text`, `failed` | Output of a run. Relayed to everyone **except** the author, who already has it |
+| `prompt` | both | `prompt` | The interview question. Accepted from an **interviewer only**; room state, so it is in the snapshot |
+| `activity` | both | `kind`, `lines`, `ms`, `activity` | Candidate left, returned, or pasted. Accepted from a **candidate only**; the tally rides along |
 
 Edits carry the **whole document**, not a diff. That is deliberate: the hub
 goroutine serialises them, so last-write-wins is well defined without OT.
@@ -606,6 +608,59 @@ justified because the document is not persisted — it lives in the hub goroutin
 and dies with the last connection, so a mistaken reload can lose a candidate's
 work outright. Browsers ignore any custom message and show their own wording;
 `preventDefault` is what arms the dialog at all.
+
+### Watching the candidate
+
+Detection only, and the limit is worth stating before the design: **a browser
+cannot stop someone opening another tab.** There is no API for it, deliberately
+— a page is not allowed to trap a user — and anyone determined can use a phone,
+a second monitor, or another machine. Every event here is a signal that
+somebody stepped away, never proof of anything, and the UI is worded so it
+cannot be read as an accusation.
+
+What is collected, and nothing else:
+
+| Signal | Source |
+|---|---|
+| Left the tab / came back, with duration | `visibilitychange` and window `blur` |
+| Pasted into the editor, with line count | Monaco `onDidPaste` |
+
+**Aggregates, not a stream.** No keystroke or mouse logging. Not because it is
+hard, but because "candidate pressed 1,847 keys" answers no question, while
+being real surveillance of someone who is not an employee and creating a
+data-protection obligation the product does not otherwise have. *Left four
+times, two minutes total, pasted twice* tells an interviewer everything a raw
+log would and is defensible if a candidate asks what was kept.
+
+Paste is the signal that earns its place: people switch tabs to read
+documentation many interviewers explicitly allow, but forty lines arriving at
+once is a different kind of event.
+
+**The tally lives in the hub**, not in the interviewer's browser, so reloading
+mid-interview does not reset it and a second interviewer sees the same numbers.
+Pinned by `TestTallySurvivesAReload`.
+
+Three things that are load-bearing:
+
+- **A short absence is ignored** (`MIN_AWAY_MS`, 1.5s). A notification stealing
+  focus or a click on the browser chrome is not somebody leaving, and without
+  the floor the interviewer's panel fills with noise and stops being read —
+  which is worse than not having it.
+- **`visibilitychange` and `blur` both fire for one switch.** "Away" is
+  reported on the leading edge only, and the hub guards against a duplicate as
+  well. Removing either guard double-counts every tab switch.
+- **The client reports its own away duration.** The hub timing it would be
+  meaningless across a reconnect. A candidate could under-report, but one who
+  is editing the payload is already past what this claims to catch.
+
+**The candidate always sees a banner saying what is tracked.** That is the
+feature, not a compliance checkbox: someone who knows the interviewer can see
+tab switches does not switch, so visible monitoring *prevents* what silent
+monitoring merely catches. It also gives them standing to explain a false
+positive rather than being quietly marked down for one.
+
+Interviewer activity is never relayed — it is their own business, and it would
+put noise in front of the person meant to be reading the signal.
 
 ### Still stubbed
 - Nothing of the *document* persists. A room's text lives only in its hub

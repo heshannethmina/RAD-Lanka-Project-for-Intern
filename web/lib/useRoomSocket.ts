@@ -7,12 +7,36 @@ export type ConnectionStatus = "connecting" | "open" | "closed";
 /** Frames the server sends. Mirrors backend/internal/ws/message.go. */
 export type Role = "interviewer" | "candidate";
 
+/** Mirrors ws.ActivitySummary. Aggregates only — no keystroke stream. */
+export type ActivitySummary = {
+  away_count: number;
+  away_ms: number;
+  paste_count: number;
+  /** True while the candidate is currently out of the tab. */
+  away: boolean;
+};
+
+export type ActivityKind = "away" | "back" | "paste";
+
 type ServerMessage =
-  | { type: "snapshot"; text?: string; prompt?: string; role?: string }
+  | {
+      type: "snapshot";
+      text?: string;
+      prompt?: string;
+      role?: string;
+      activity?: ActivitySummary;
+    }
   | { type: "edit"; text?: string }
   | { type: "presence"; clients?: number }
   | { type: "result"; text?: string; failed?: boolean }
-  | { type: "prompt"; prompt?: string };
+  | { type: "prompt"; prompt?: string }
+  | {
+      type: "activity";
+      kind?: ActivityKind;
+      lines?: number;
+      ms?: number;
+      activity?: ActivitySummary;
+    };
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080";
 
@@ -30,7 +54,13 @@ type Handlers = {
    * Delivered with the snapshot because both are room state a joiner needs
    * before it can render anything correctly.
    */
-  onJoin: (prompt: string, role: Role) => void;
+  onJoin: (prompt: string, role: Role, activity: ActivitySummary | null) => void;
+  /**
+   * The candidate left, returned, or pasted. Carries the running tally, which
+   * the server owns — so a reload does not reset it and the client never has
+   * to accumulate anything itself.
+   */
+  onActivity: (kind: ActivityKind, summary: ActivitySummary, lines: number) => void;
   /** The interviewer changed the question. */
   onPrompt: (prompt: string) => void;
   /** Full document after somebody else's edit. */
@@ -101,6 +131,20 @@ export function useRoomSocket(
     }
   }, []);
 
+  /**
+   * Reports one observed event. Sent by the candidate's client only; the
+   * server ignores these from an interviewer.
+   */
+  const sendActivity = useCallback(
+    (kind: ActivityKind, extra?: { ms?: number; lines?: number }) => {
+      const ws = socketRef.current;
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "activity", kind, ...extra }));
+      }
+    },
+    [],
+  );
+
   const sendResult = useCallback((text: string, failed: boolean) => {
     const ws = socketRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
@@ -152,6 +196,7 @@ export function useRoomSocket(
             handlersRef.current.onJoin(
               msg.prompt ?? "",
               msg.role === "candidate" ? "candidate" : "interviewer",
+              msg.activity ?? null,
             );
             handlersRef.current.onSnapshot(msg.text ?? "", sendEdit);
             break;
@@ -166,6 +211,11 @@ export function useRoomSocket(
             break;
           case "prompt":
             handlersRef.current.onPrompt(msg.prompt ?? "");
+            break;
+          case "activity":
+            if (msg.activity && msg.kind) {
+              handlersRef.current.onActivity(msg.kind, msg.activity, msg.lines ?? 0);
+            }
             break;
         }
       };
@@ -192,5 +242,5 @@ export function useRoomSocket(
     };
   }, [roomId, token, sendEdit]);
 
-  return { status, peers, sendEdit, sendResult, sendPrompt };
+  return { status, peers, sendEdit, sendResult, sendPrompt, sendActivity };
 }
