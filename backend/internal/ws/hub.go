@@ -112,16 +112,27 @@ func (h *Hub) apply(in inbound) {
 		log.Printf("ws: discarding malformed frame: %v", err)
 		return
 	}
-	if msg.Type != TypeEdit {
-		// Clients have nothing else to say yet. Ignore rather than error:
-		// an older or newer client should not be able to kill the room.
-		return
-	}
+	switch msg.Type {
+	case TypeEdit:
+		h.document = msg.Text
+		// The author already has this text locally; echoing it back would
+		// fight with their cursor.
+		h.broadcast(Message{Type: TypeEdit, Text: msg.Text}, in.client)
 
-	h.document = msg.Text
-	// The author already has this text locally; echoing it back would fight
-	// with their cursor.
-	h.broadcast(Message{Type: TypeEdit, Text: msg.Text}, in.client)
+	case TypeResult:
+		// Relayed, not stored. A run result is a moment, not part of the
+		// document, so a client joining later gets no snapshot of it — it
+		// would be stale by then anyway.
+		//
+		// The author already rendered its own output, so it is skipped for
+		// the same reason as an edit.
+		h.broadcast(Message{Type: TypeResult, Text: msg.Text, Failed: msg.Failed}, in.client)
+
+	default:
+		// Ignore rather than error: an older or newer client should not be
+		// able to kill the room by saying something this build has never
+		// heard of.
+	}
 }
 
 // broadcast sends msg to every client except skip, which may be nil.

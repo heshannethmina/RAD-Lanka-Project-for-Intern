@@ -17,6 +17,19 @@ const (
 
 	// TypePresence reports how many clients are currently in the room.
 	TypePresence MessageType = "presence"
+
+	// TypeResult carries the output of a run so the other side of the
+	// interview sees it too.
+	//
+	// The hub relays this without understanding it. Where the output came
+	// from — a sandbox, or Python compiled to WebAssembly in the browser —
+	// is the client's business, and deliberately not encoded here: the room
+	// should not need a new frame type every time execution moves.
+	//
+	// It is not folded into the document. Run output is not something either
+	// person edits, and writing it into the shared text would fight with
+	// whoever is typing.
+	TypeResult MessageType = "result"
 )
 
 // Message is the single frame type exchanged over the socket.
@@ -25,4 +38,7 @@ type Message struct {
 	Text string      `json:"text,omitempty"`
 	// Clients is set on TypePresence only.
 	Clients int `json:"clients,omitempty"`
+	// Failed marks a run that did not succeed, so the other side can show it
+	// the same way the person who pressed Run sees it. Set on TypeResult only.
+	Failed bool `json:"failed,omitempty"`
 }

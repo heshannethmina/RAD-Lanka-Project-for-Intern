@@ -8,7 +8,8 @@ export type ConnectionStatus = "connecting" | "open" | "closed";
 type ServerMessage =
   | { type: "snapshot"; text?: string }
   | { type: "edit"; text?: string }
-  | { type: "presence"; clients?: number };
+  | { type: "presence"; clients?: number }
+  | { type: "result"; text?: string; failed?: boolean };
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080";
 
@@ -23,6 +24,11 @@ type Handlers = {
   onSnapshot: (text: string, send: (text: string) => void) => void;
   /** Full document after somebody else's edit. */
   onEdit: (text: string) => void;
+  /**
+   * Output from a run the *other* person started. The hub does not echo a
+   * result to its author, who already rendered it locally.
+   */
+  onResult: (text: string, failed: boolean) => void;
 };
 
 /**
@@ -63,6 +69,20 @@ export function useRoomSocket(
     const ws = socketRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "edit", text }));
+    }
+  }, []);
+
+  /**
+   * Shares the output of a run with the rest of the room.
+   *
+   * Dropped silently when the socket is not open: a run whose result cannot
+   * be shared still succeeded for the person who pressed Run, and failing
+   * loudly here would report a problem they cannot act on.
+   */
+  const sendResult = useCallback((text: string, failed: boolean) => {
+    const ws = socketRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "result", text, failed }));
     }
   }, []);
 
@@ -111,6 +131,9 @@ export function useRoomSocket(
           case "presence":
             setPeers(msg.clients ?? 1);
             break;
+          case "result":
+            handlersRef.current.onResult(msg.text ?? "", msg.failed ?? false);
+            break;
         }
       };
 
@@ -136,5 +159,5 @@ export function useRoomSocket(
     };
   }, [roomId, token, sendEdit]);
 
-  return { status, peers, sendEdit };
+  return { status, peers, sendEdit, sendResult };
 }

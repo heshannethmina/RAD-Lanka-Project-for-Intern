@@ -195,6 +195,7 @@ One JSON envelope in both directions, so the client only ever parses one shape:
 | `snapshot` | server → client | `text` | Full document, sent once on join so late joiners start in sync |
 | `edit` | both | `text` | Full document after an edit. Server relays to everyone **except** the author |
 | `presence` | server → client | `clients` | Number of clients currently in the room |
+| `result` | both | `text`, `failed` | Output of a run. Relayed to everyone **except** the author, who already has it |
 
 Edits carry the **whole document**, not a diff. That is deliberate: the hub
 goroutine serialises them, so last-write-wins is well defined without OT.
@@ -538,14 +539,50 @@ Content-Type, Authorization` and echoes `http://localhost:3000`, and a
 cross-origin register returns 201 with the origin echoed. `next build` and
 `tsc --noEmit` are both clean.
 
+### Python runs in the browser
+
+`web/lib/runPython.ts` runs Python through **Pyodide** — CPython compiled to
+WebAssembly — in the viewer's own tab. Judge0 is still wired up and still
+handles Go and JavaScript; Python simply never reaches it.
+
+This is not a stopgap dressed as a decision. An interview is an invitation for
+a stranger to run code, and on a managed host there is no sandbox available:
+`exec.Command("python3", ...)` in the Go process would let a candidate read
+`os.environ["DATABASE_URL"]` and walk off with every account in the database.
+Judge0 exists to prevent exactly that, but it needs cgroup v1 and a privileged
+container, which Render does not grant. Running the code in the candidate's own
+browser **sidesteps** the problem instead of defending against it: there is
+nothing of ours near the code, and the worst outcome is a hung tab.
+
+The trade is that output is not verified — a determined candidate could patch
+the result before it is shared. In a live interview you are watching them, so
+this matters far less than it would for take-home grading. If verified
+execution is ever needed, that is Judge0 on a real Linux host, and nothing here
+is in the way of it.
+
+Two details worth keeping:
+
+- The runtime is **prefetched when Python is selected**, not on the first
+  click. It is a ~6MB download; paying for it while someone reads the question
+  is invisible, paying for it after they press Run is a long unexplained wait.
+- `runPython` **never throws**. A traceback is the *output* of a failed run and
+  belongs in the same panel as a successful one, not in a separate error
+  banner. Anything printed before the failure is kept, because it is usually
+  the half that explains the traceback.
+
+Pyodide's version is pinned: its wheel URLs are version-scoped, so a floating
+version breaks package loading.
+
 ### Still stubbed
 - Nothing of the *document* persists. A room's text lives only in its hub
   goroutine and dies when the last client leaves — pinned by
   `TestReopenedRoomStartsEmpty`. The room record survives; its contents do not.
-- **Run output is not shared.** Only the person who pressed Run sees the
-  result; the other side of the interview sees nothing. The document syncs but
-  the output panel does not. Fixing it means a new `result` frame relayed by
-  the hub — the natural next increment on top of step 4.
+- ~~Run output is not shared.~~ **Done.** A `result` frame is relayed by the
+  hub, so both sides see the output. It is deliberately *not* folded into the
+  document — run output is not something either person edits, and writing it
+  into the shared text would fight with whoever is typing — and it is not
+  replayed to late joiners, because a result is a moment rather than state.
+  Both properties are pinned by tests in `internal/ws/result_test.go`.
 - Language selection is per-client, not synced, so two people in one room can
   submit the same source under different languages. The room now *has* a
   language column, so the fix is to make the client honour it.

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { applyRemoteText, type CodeEditor } from "@/lib/applyRemoteText";
 import { useRoomSocket, type ConnectionStatus } from "@/lib/useRoomSocket";
 import { formatRunResult, isFailure, runCode, RunError } from "@/lib/runCode";
+import { loadPython, runPython } from "@/lib/runPython";
 import { LogoMark } from "./Logo";
 
 const STARTER = `def max_element(values):
@@ -86,6 +87,25 @@ function Spinner() {
   );
 }
 
+/** Browser-side Python. Never throws: a traceback is output, not an error. */
+async function runPythonLocally(source: string) {
+  const result = await runPython(source);
+  return { text: result.output, failed: result.failed };
+}
+
+/** Everything else, through the backend to Judge0. */
+async function runViaJudge0(language: string, source: string) {
+  try {
+    const result = await runCode(language, source);
+    return { text: formatRunResult(result), failed: isFailure(result) };
+  } catch (err) {
+    return {
+      text: err instanceof RunError ? err.message : "Run failed.",
+      failed: true,
+    };
+  }
+}
+
 export default function RoomEditor({
   roomId,
   token,
@@ -127,7 +147,7 @@ export default function RoomEditor({
     }
   }, []);
 
-  const { status, peers, sendEdit } = useRoomSocket(roomId, token, {
+  const { status, peers, sendEdit, sendResult } = useRoomSocket(roomId, token, {
     onSnapshot: (text, send) => {
       if (text !== "") {
         write(text);
@@ -139,7 +159,27 @@ export default function RoomEditor({
       send(editorRef.current?.getValue() ?? STARTER);
     },
     onEdit: write,
+    // Someone else pressed Run. Show what they got, so an interviewer can see
+    // their candidate's output instead of only their own.
+    onResult: (text, didFail) => {
+      setOutput(text);
+      setFailed(didFail);
+      // Their run, not ours — make sure our own button is not left spinning.
+      setRunning(false);
+    },
   });
+
+  // Start fetching the Python runtime as soon as Python is selected, rather
+  // than on the first click. It is a ~6MB download, and paying for it while
+  // someone is still reading the question is invisible; paying for it after
+  // they press Run is a long, unexplained wait.
+  //
+  // Failure is ignored on purpose: runPython retries and reports properly, and
+  // there is nothing useful to say about a prefetch nobody asked for.
+  useEffect(() => {
+    if (language !== "python") return;
+    void loadPython().catch(() => {});
+  }, [language]);
 
   const handleBeforeMount = useCallback((monaco: Monaco) => {
     // The same GitHub-light token palette the marketing editor mockup uses,
@@ -203,12 +243,23 @@ export default function RoomEditor({
     setFailed(false);
 
     try {
-      const result = await runCode(language, source);
-      setOutput(formatRunResult(result));
-      setFailed(isFailure(result));
-    } catch (err) {
-      setFailed(true);
-      setOutput(err instanceof RunError ? err.message : "Run failed.");
+      // Python runs in this browser, through Pyodide. Every other language
+      // goes to Judge0 via the backend, which needs a Linux host with cgroup
+      // v1 and so is not available on the current deployment.
+      //
+      // The split is deliberate rather than a stopgap: browser execution
+      // cannot be verified, but it also cannot reach anything of ours, and an
+      // interview is a stranger running code. See lib/runPython.ts.
+      const { text, failed: didFail } =
+        language === "python"
+          ? await runPythonLocally(source)
+          : await runViaJudge0(language, source);
+
+      setOutput(text);
+      setFailed(didFail);
+      // Share it, so the other side of the interview sees what happened.
+      // The hub relays this to everyone but us; we already have it.
+      sendResult(text, didFail);
     } finally {
       setRunning(false);
     }
