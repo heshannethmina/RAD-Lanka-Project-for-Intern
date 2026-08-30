@@ -1,0 +1,29 @@
+# Repository-wide ignores. web/ has its own .gitignore for Next.js output.
+
+# Compiled Go binaries. `go build -o app ./cmd/server` is the Render build
+# command and is easy to run locally by accident.
+backend/app
+backend/server
+backend/cmd/server/server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test and coverage output
+*.test
+*.out
+coverage.txt
+
+# Real environment files. Only .env.example belongs in git — everything here
+# holds credentials.
+.env
+.env.*
+!.env.example
+
+# Editors and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

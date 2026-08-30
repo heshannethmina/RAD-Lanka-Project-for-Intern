@@ -27,6 +27,14 @@ func env(key, fallback string) string {
 
 func main() {
 	addr := env("ADDR", ":8080")
+	// Render and most other PaaS hosts pick the port themselves, inject it as
+	// PORT, and route to it — a service listening anywhere else looks dead to
+	// their health check. It wins over ADDR because it is not a preference,
+	// it is where the platform is already sending traffic. ":port" binds
+	// 0.0.0.0, which Render requires; binding localhost is not reachable.
+	if port := os.Getenv("PORT"); port != "" {
+		addr = ":" + port
+	}
 	judgeURL := env("JUDGE0_URL", "http://localhost:2358")
 	// A comma-separated allowlist. "*" is local development only: the API now
 	// carries bearer tokens, so a deployment must name its web origin here.

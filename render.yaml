@@ -1,0 +1,51 @@
+# Render Blueprint — the Go backend and its Postgres.
+#
+# The Next.js app is NOT here: it deploys to Vercel from the same repository
+# with its root directory set to `web/`. The two halves are deployed
+# separately and only know each other through URLs, which is also why the
+# room page talks to this service directly rather than proxying through
+# Next.js.
+#
+# Apply with: Render dashboard -> New -> Blueprint -> pick this repo.
+#
+# Judge0 is deliberately absent and cannot be added here. It sandboxes with
+# isolate, which needs cgroup v1 and a privileged container; Render grants
+# neither, and the image is 14.1GB besides. JUDGE0_URL is therefore left
+# unset, falls back to localhost, and POST /api/run answers 502 "could not
+# reach the execution service". That is the intended behaviour of this
+# deployment, not a fault to chase. Code execution needs a VPS.
+
+services:
+  - type: web
+    name: syncr-api
+    runtime: go
+    plan: free
+    rootDir: backend
+    buildCommand: go build -o app ./cmd/server
+    startCommand: ./app
+    # The server binds $PORT, which Render injects. Migrations run at startup,
+    # so this only reports healthy once the schema is actually in place.
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: syncr-db
+          property: connectionString
+
+      # The web origin allowed to call this API *and* to open a WebSocket.
+      # sync: false means Render will not manage it — set it by hand once the
+      # Vercel URL exists, because it does not until the frontend is deployed.
+      #
+      # Start at "*" to get the service usable, then narrow to the Vercel
+      # production URL. It is comma-separated, so add preview origins here too
+      # if you want branch deploys to work.
+      - key: CORS_ORIGIN
+        sync: false
+
+databases:
+  - name: syncr-db
+    plan: free
+    # Free Postgres EXPIRES 30 DAYS AFTER CREATION, with a 14-day grace period
+    # to upgrade before it is deleted. Every account and room goes with it.
+    # Changing this one line to a paid plan is the whole fix; nothing else in
+    # the deployment has to change.
