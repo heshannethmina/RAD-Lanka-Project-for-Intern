@@ -23,7 +23,7 @@ const PLANS: Plan[] = [
       "7-day history",
     ],
     cta: "Start free",
-    href: "/room/demo",
+    href: "/register",
   },
   {
     name: "Team",
@@ -37,7 +37,7 @@ const PLANS: Plan[] = [
       "90-day history",
     ],
     cta: "Start trial",
-    href: "/room/demo",
+    href: "/register",
     recommended: true,
   },
   {
@@ -50,7 +50,7 @@ const PLANS: Plan[] = [
       "Priority support",
     ],
     cta: "Talk to us",
-    href: "/room/demo",
+    href: "/register",
   },
 ];
 

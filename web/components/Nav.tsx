@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Logo from "./Logo";
+import { useHasSession } from "@/lib/useSession";
 
 const LINKS = [
   { href: "#product", label: "Product" },
@@ -14,6 +15,9 @@ const LINKS = [
 const SETTLE_AT = 8;
 
 export default function Nav() {
+  // Someone already signed in should be offered their interviews, not asked
+  // to sign in again. Getting this wrong costs a redirect, nothing more.
+  const signedIn = useHasSession();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -66,22 +70,26 @@ export default function Nav() {
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-5">
-          <Link
-            href="/login"
-            className="hidden text-[14px] font-medium text-ink-body transition-colors hover:text-ink sm:block"
-          >
-            Sign in
-          </Link>
-          {/* Was "Try live demo" pointing at /room/demo. Rooms now require
-              either an account or an invite link, so an anonymous demo room no
-              longer exists — the honest CTA is to sign up. Restore a demo only
+          {/* Rooms need an account or an invite link, so there is no anonymous
+              demo to offer — the honest CTA is to sign up. Restore a demo only
               by building one that is genuinely open. */}
-          <Link
-            href="/register"
-            className="btn-primary h-9 px-4 text-[14px]"
-          >
-            Get started
-          </Link>
+          {signedIn ? (
+            <Link href="/dashboard" className="btn-primary h-9 px-4 text-[14px]">
+              Go to interviews
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="hidden text-[14px] font-medium text-ink-body transition-colors hover:text-ink sm:block"
+              >
+                Sign in
+              </Link>
+              <Link href="/register" className="btn-primary h-9 px-4 text-[14px]">
+                Get started
+              </Link>
+            </>
+          )}
 
           <button
             type="button"
@@ -131,11 +139,11 @@ export default function Nav() {
               </a>
             ))}
             <Link
-              href="/login"
+              href={signedIn ? "/dashboard" : "/login"}
               onClick={() => setMenuOpen(false)}
               className="py-2.5 text-[15px] font-medium text-ink-body transition-colors hover:text-ink sm:hidden"
             >
-              Sign in
+              {signedIn ? "My interviews" : "Sign in"}
             </Link>
           </nav>
         </div>

@@ -111,11 +111,14 @@ async function runViaJudge0(language: string, source: string) {
 export default function RoomEditor({
   roomId,
   token,
+  title,
   initialLanguage = "python",
 }: {
   roomId: string;
   /** Session token or invite token; RoomGate has already checked it works. */
   token: string;
+  /** What the interviewer called this session, for the header. */
+  title?: string;
   /** The room's own language, so both sides start on the same one. */
   initialLanguage?: string;
 }) {
@@ -220,6 +223,25 @@ export default function RoomEditor({
     };
   }, []);
 
+  // Warn before the tab is closed or reloaded during a live interview.
+  //
+  // Worth the friction because the document is not persisted: it lives in the
+  // room's hub goroutine and dies when the last person disconnects, so a
+  // mistaken reload can lose a candidate's work with no way back. Only armed
+  // while the socket is actually open, so it never fires on a page that has
+  // nothing at stake.
+  //
+  // Browsers ignore any custom message and show their own wording; the
+  // preventDefault is what arms the dialog at all.
+  useEffect(() => {
+    if (status !== "open") return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [status]);
+
   const handleBeforeMount = useCallback((monaco: Monaco) => {
     // The same GitHub-light token palette the marketing editor mockup uses,
     // so the product and the page it is advertised on agree.
@@ -309,13 +331,49 @@ export default function RoomEditor({
       {/* ---------- top bar ---------- */}
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line px-4">
         <div className="flex min-w-0 items-center gap-3">
-          <Link href="/" className="shrink-0 rounded-sm text-accent">
-            <LogoMark className="h-[22px] w-auto" />
-          </Link>
+          {/*
+            Only the interviewer gets a way out. A candidate has no dashboard
+            to return to, and a stray click on a logo mid-interview would drop
+            them out of the room — so for them the mark is decoration, not a
+            link. Leaving is what the browser's own back button is for.
+          */}
+          {role === "interviewer" ? (
+            <Link
+              href="/dashboard"
+              className="group flex shrink-0 items-center gap-2 rounded-md px-1.5 py-1 text-ink-muted transition-colors hover:bg-bg-subtle hover:text-ink"
+              title="Back to your interviews"
+            >
+              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
+                <path
+                  d="M10 3.5L5.5 8l4.5 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <LogoMark className="h-[22px] w-auto text-accent" />
+              <span className="hidden text-[13px] font-medium sm:inline">
+                Interviews
+              </span>
+            </Link>
+          ) : (
+            <span className="shrink-0 text-accent" aria-label="SyncR">
+              <LogoMark className="h-[22px] w-auto" />
+            </span>
+          )}
+
           <span className="h-5 w-px shrink-0 bg-line" />
-          <span className="truncate font-mono text-[13px] text-ink-muted">
-            room / <span className="font-medium text-ink">{roomId}</span>
-          </span>
+
+          <div className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-[13px] font-medium text-ink">
+              {title?.trim() || "Untitled interview"}
+            </span>
+            <span className="truncate font-mono text-[11px] text-ink-muted">
+              {roomId}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-4">

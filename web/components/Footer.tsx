@@ -19,7 +19,7 @@ const PRODUCT_LINKS = [
   { href: "#product", label: "Features" },
   { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "FAQ" },
-  { href: "/room/demo", label: "Live demo" },
+  { href: "/register", label: "Get started" },
 ];
 
 export default function Footer() {
@@ -37,7 +37,7 @@ export default function Footer() {
               Free to start, and nothing for candidates to install.
             </p>
             <Link
-              href="/room/demo"
+              href="/register"
               className="btn-primary mt-8 h-12 px-6 text-[15px]"
             >
               Start a free interview

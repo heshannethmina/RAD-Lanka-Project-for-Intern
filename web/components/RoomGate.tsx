@@ -112,11 +112,29 @@ export default function RoomGate({ roomId }: { roomId: string }) {
           This room is not open to you
         </h1>
         <p className="mt-2 max-w-sm text-sm text-ink-muted">{state.message}</p>
-        {state.canSignIn && (
-          <Link href="/login" className="btn-primary mt-6 h-10 px-5 text-sm">
-            Sign in
+
+        {/*
+          A dead end here is how someone gets stuck. Offer whatever actually
+          helps: an interviewer who is still signed in wants their list back,
+          one whose session lapsed wants to sign in, and a candidate whose link
+          expired can only go and ask for a new one — so they get the honest
+          answer rather than a button that leads nowhere useful.
+        */}
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          {state.canSignIn &&
+            (getToken() ? (
+              <Link href="/dashboard" className="btn-primary h-10 px-5 text-sm">
+                Back to interviews
+              </Link>
+            ) : (
+              <Link href="/login" className="btn-primary h-10 px-5 text-sm">
+                Sign in
+              </Link>
+            ))}
+          <Link href="/" className="btn-secondary h-10 px-5 text-sm">
+            Go home
           </Link>
-        )}
+        </div>
       </main>
     );
   }
@@ -125,6 +143,7 @@ export default function RoomGate({ roomId }: { roomId: string }) {
     <RoomEditor
       roomId={roomId}
       token={state.token}
+      title={state.room?.title}
       initialLanguage={state.room?.language ?? "python"}
     />
   );

@@ -573,6 +573,40 @@ Two details worth keeping:
 Pyodide's version is pinned: its wheel URLs are version-scoped, so a floating
 version breaks package loading.
 
+### Getting around
+
+Every page has a way out, which it did not before — a room was a dead end with
+no route back to the dashboard, and the marketing pages still pointed at a
+`/room/demo` that the auth gate now refuses.
+
+The room header is **role-aware**, and that is the part worth not undoing:
+
+- **Interviewer** — a back chevron to `/dashboard`, labelled "Interviews".
+- **Candidate** — the mark is decoration, not a link. They have no dashboard to
+  return to, and a stray click mid-interview would drop them out of the room.
+  Leaving is what the browser's own back button is for.
+
+The header shows the room's title with the ID beneath it, so an interviewer
+running several sessions can tell which one they are in.
+
+The nav offers "Go to interviews" instead of "Sign in" when a session token is
+present. `lib/useSession.ts` reads that through `useSyncExternalStore` rather
+than an effect: localStorage is external state, so this gives the right answer
+on the client without a hydration mismatch and without the extra render an
+effect would cost. It deliberately does **not** verify the token with the
+server — being wrong costs a redirect to `/login`, nothing more. Use `useAuth`
+where the answer has to be trustworthy.
+
+The "not open to you" screen offers whatever actually helps: an interviewer who
+is still signed in gets their list back, one whose session lapsed gets sign-in,
+and everyone gets a way home. A screen with no exit is how someone gets stuck.
+
+**The room warns before unload** while the socket is open. The friction is
+justified because the document is not persisted — it lives in the hub goroutine
+and dies with the last connection, so a mistaken reload can lose a candidate's
+work outright. Browsers ignore any custom message and show their own wording;
+`preventDefault` is what arms the dialog at all.
+
 ### Still stubbed
 - Nothing of the *document* persists. A room's text lives only in its hub
   goroutine and dies when the last client leaves — pinned by
