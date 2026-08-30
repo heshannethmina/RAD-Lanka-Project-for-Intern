@@ -9,11 +9,11 @@ import (
 // byToken assigns a role from the query string, so one test room can hold both
 // an interviewer and a candidate. The real authorizer reads a session or
 // invite token; this only has to distinguish the two.
-func byToken(_ context.Context, _, token string) (Role, error) {
+func byToken(_ context.Context, _, token string) (Grant, error) {
 	if token == "interviewer" {
-		return RoleInterviewer, nil
+		return Grant{Role: RoleInterviewer}, nil
 	}
-	return RoleCandidate, nil
+	return Grant{Role: RoleCandidate}, nil
 }
 
 // The interviewer is told when the candidate leaves, and the running tally

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/heshannethmina/interview-platform/backend/internal/auth"
+	"github.com/heshannethmina/interview-platform/backend/internal/plan"
 	"github.com/heshannethmina/interview-platform/backend/internal/store"
 )
 
@@ -50,12 +51,41 @@ type authResponse struct {
 type userJSON struct {
 	ID    int64  `json:"id"`
 	Email string `json:"email"`
+	Plan  string `json:"plan"`
+}
+
+// meJSON is the signed-in view: who you are, and what you have left.
+//
+// Usage is returned with the identity rather than from a separate endpoint,
+// because every page that shows one wants the other, and two round trips to
+// render one header is a waste.
+type meJSON struct {
+	userJSON
+	Usage usageJSON `json:"usage"`
+}
+
+type usageJSON struct {
+	PlanLabel string `json:"plan_label"`
+	// InterviewsUsed counts against InterviewsIncluded. Included is 0 when the
+	// tier is unlimited, which the client reads as "no ceiling" rather than
+	// "none allowed" — hence Unlimited alongside it, so nothing turns on
+	// interpreting a zero.
+	InterviewsUsed      int  `json:"interviews_used"`
+	InterviewsIncluded  int  `json:"interviews_included"`
+	UnlimitedInterviews bool `json:"unlimited_interviews"`
+	// MaxMinutes is the longest a single interview may run, 0 when unlimited.
+	MaxMinutes int `json:"max_minutes"`
+	// UsedMinutes is interview time actually spent in the current window.
+	UsedMinutes int `json:"used_minutes"`
+	// Lifetime means the allowance never resets — the free tier is a trial,
+	// not a monthly budget, and the UI has to say so.
+	Lifetime bool `json:"lifetime"`
 }
 
 func toUserJSON(u *store.User) userJSON {
 	// PasswordHash is deliberately absent. Encoding the store type directly
 	// would ship the bcrypt hash to the client.
-	return userJSON{ID: u.ID, Email: u.Email}
+	return userJSON{ID: u.ID, Email: u.Email, Plan: u.Plan}
 }
 
 // Register creates an interviewer account and logs it straight in, so the
@@ -164,9 +194,8 @@ func Logout(s *store.Store) http.HandlerFunc {
 	}
 }
 
-// Me returns the signed-in interviewer, for a client restoring a stored token
-// on load.
-func Me() http.HandlerFunc {
+// Me returns the signed-in interviewer and what their plan has left.
+func Me(s *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, ok := UserFrom(r.Context())
 		if !ok {
@@ -175,7 +204,34 @@ func Me() http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "not signed in")
 			return
 		}
-		writeJSON(w, http.StatusOK, toUserJSON(u))
+
+		tier := plan.ByName(u.Plan)
+		out := meJSON{
+			userJSON: toUserJSON(u),
+			Usage: usageJSON{
+				PlanLabel:           tier.Label,
+				InterviewsIncluded:  tier.MaxInterviews,
+				UnlimitedInterviews: tier.UnlimitedInterviews(),
+				MaxMinutes:          int(tier.MaxDuration / time.Minute),
+				Lifetime:            tier.Lifetime,
+			},
+		}
+
+		// Usage is a nicety, not the enforcement — that happens on the room
+		// creation path. So a failure here degrades to zeroes and a log line
+		// rather than blocking somebody from seeing who they are signed in as.
+		if used, err := s.CountRooms(r.Context(), u.ID, tier.Lifetime); err == nil {
+			out.Usage.InterviewsUsed = used
+		} else {
+			log.Printf("api: me: count rooms: %v", err)
+		}
+		if spent, err := s.UsedDuration(r.Context(), u.ID, tier.Lifetime); err == nil {
+			out.Usage.UsedMinutes = int(spent / time.Minute)
+		} else {
+			log.Printf("api: me: used duration: %v", err)
+		}
+
+		writeJSON(w, http.StatusOK, out)
 	}
 }
 

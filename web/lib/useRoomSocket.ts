@@ -41,6 +41,10 @@ type ServerMessage =
       role?: string;
       activity?: ActivitySummary;
       events?: ActivityEvent[];
+      /** Deadline in ms since the epoch, absent when the plan is unmetered. */
+      ends_at?: number;
+      /** True when the interview was already over before we joined. */
+      ended?: boolean;
     }
   | { type: "edit"; text?: string }
   | { type: "presence"; clients?: number }
@@ -54,7 +58,8 @@ type ServerMessage =
       activity?: ActivitySummary;
       event?: ActivityEvent;
     }
-  | { type: "pointer"; x?: number; y?: number; role?: string };
+  | { type: "pointer"; x?: number; y?: number; role?: string }
+  | { type: "ended" };
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080";
 
@@ -77,7 +82,12 @@ type Handlers = {
     role: Role,
     activity: ActivitySummary | null,
     events: ActivityEvent[],
+    /** Null when the plan does not meter this interview. */
+    endsAt: number | null,
+    alreadyEnded: boolean,
   ) => void;
+  /** The interview ran out of time. The room stays readable, but read-only. */
+  onEnded: () => void;
   /**
    * The candidate left, returned, or pasted. Carries the running tally, which
    * the server owns — so a reload does not reset it and the client never has
@@ -236,6 +246,8 @@ export function useRoomSocket(
               msg.role === "candidate" ? "candidate" : "interviewer",
               msg.activity ?? null,
               msg.events ?? [],
+              msg.ends_at ?? null,
+              msg.ended ?? false,
             );
             handlersRef.current.onSnapshot(msg.text ?? "", sendEdit);
             break;
@@ -255,6 +267,9 @@ export function useRoomSocket(
             if (msg.activity && msg.event) {
               handlersRef.current.onActivity(msg.activity, msg.event);
             }
+            break;
+          case "ended":
+            handlersRef.current.onEnded();
             break;
           case "pointer":
             handlersRef.current.onPointer({

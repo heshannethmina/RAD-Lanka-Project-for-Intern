@@ -14,7 +14,15 @@ const FAQS = [
   },
   {
     q: "Can I bring my own interview questions?",
-    a: "Yes, on the Team plan. It includes a question bank where you can save and reuse your own prompts and starter code.",
+    a: "Yes. You can write the question straight into the room and the candidate sees it as you type. Pro adds a question bank, so you can save and reuse your prompts and starter code.",
+  },
+  {
+    q: "How is interview time counted?",
+    a: "The timer starts when the interview begins and stops when it ends. A room left open in a tab is not counted, and you are billed for the minutes you actually used.",
+  },
+  {
+    q: "What happens when I run out of time?",
+    a: "The interview in progress finishes — nothing is cut off mid-sentence. You are told before you start a session you do not have the time for.",
   },
   {
     q: "What languages are supported?",

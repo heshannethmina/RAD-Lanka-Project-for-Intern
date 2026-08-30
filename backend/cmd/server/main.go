@@ -63,7 +63,18 @@ func main() {
 
 	// One hub goroutine per room, created on first join and shut down when
 	// the last client leaves.
-	rooms := ws.NewRegistry()
+	//
+	// The callback records an interview that ran out of time. It is a function
+	// rather than the store itself so package ws stays ignorant of Postgres —
+	// the same reason authorization arrives as a function.
+	rooms := ws.NewRegistry(func(roomID string) {
+		// Its own context: the room's is already gone by the time this runs.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := db.CloseExpiredRoom(ctx, roomID); err != nil {
+			log.Printf("server: closing expired room %q: %v", roomID, err)
+		}
+	})
 	go rooms.Run()
 
 	// Code execution goes to Judge0. The Go process never runs submitted code
@@ -89,7 +100,7 @@ func main() {
 
 	// Everything an interviewer does with their own rooms.
 	authed := http.NewServeMux()
-	authed.Handle("GET /api/me", api.Me())
+	authed.Handle("GET /api/me", api.Me(db))
 	authed.Handle("POST /api/rooms", api.CreateRoom(db))
 	authed.Handle("GET /api/rooms", api.ListRooms(db))
 	authed.Handle("GET /api/rooms/{roomID}", api.GetRoom(db))

@@ -12,7 +12,7 @@ import (
 func serverAs(t *testing.T, auth Authorizer) func(room string) string {
 	t.Helper()
 
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 	go reg.Run()
 
 	mux := http.NewServeMux()

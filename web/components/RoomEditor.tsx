@@ -13,6 +13,7 @@ import {
   type Role,
 } from "@/lib/useRoomSocket";
 import ActivityPanel from "./ActivityPanel";
+import Countdown from "./Countdown";
 import PointerLayer, { usePointerBroadcast } from "./PointerLayer";
 import { useActivityReporter } from "@/lib/useActivityReporter";
 import { api } from "@/lib/api";
@@ -125,6 +126,29 @@ function MonitoringNotice() {
   );
 }
 
+/**
+ * Shown once the interview's time is up.
+ *
+ * A banner rather than a modal on purpose: both people still want to read the
+ * code and copy it out, and a dialog sitting over it would be in the way at
+ * exactly the wrong moment. The editor goes read-only underneath, which is
+ * what actually stops the interview.
+ */
+function EndedNotice() {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-[#F1AEAE] bg-[#FDF3F3] px-4 py-2 text-[12px] text-[#B42318]">
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+      <span>
+        This interview has ended. The code is still here to read and copy, but
+        it can no longer be edited or run.
+      </span>
+    </div>
+  );
+}
+
 /** Browser-side Python. Never throws: a traceback is output, not an error. */
 async function runPythonLocally(source: string) {
   const result = await runPython(source);
@@ -174,6 +198,9 @@ export default function RoomEditor({
   const [pointersOn, setPointersOn] = useState(false);
   // Which of the two bottom-right tabs is showing.
   const [sideTab, setSideTab] = useState<"prompt" | "activity">("prompt");
+  // Absolute deadline in ms, or null when the plan does not meter this room.
+  const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [ended, setEnded] = useState(false);
 
   // onDidPaste is registered once when Monaco mounts, so it would otherwise
   // capture the role and sender from that first render — before the snapshot
@@ -232,12 +259,15 @@ export default function RoomEditor({
       // own editor.
       send(editorRef.current?.getValue() ?? STARTER);
     },
-    onJoin: (roomPrompt, joinedAs, tally, log) => {
+    onJoin: (roomPrompt, joinedAs, tally, log, deadline, alreadyEnded) => {
       setRole(joinedAs);
       setPrompt(roomPrompt);
       setActivity(tally);
       setEvents(log);
+      setEndsAt(deadline);
+      setEnded(alreadyEnded);
     },
+    onEnded: () => setEnded(true),
     onActivity: (summary, event) => {
       setActivity(summary);
       // Bounded here too. The server caps what it keeps; this keeps a long
@@ -505,6 +535,8 @@ export default function RoomEditor({
             </span>
           </span>
 
+          <Countdown endsAt={ended ? null : endsAt} />
+
           <PeerAvatars peers={peers} />
 
           {/* Only the state that needs to be seen without looking: away now.
@@ -575,7 +607,7 @@ export default function RoomEditor({
 
           <button
             onClick={handleRun}
-            disabled={running}
+            disabled={running || ended}
             className="btn-primary h-9 gap-2 px-4 text-[13px] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {running ? (
@@ -597,7 +629,9 @@ export default function RoomEditor({
 
       <PointerLayer pointer={pointer} enabled={pointersOn} />
 
-      {role === "candidate" && <MonitoringNotice />}
+      {ended && <EndedNotice />}
+
+      {role === "candidate" && !ended && <MonitoringNotice />}
 
       {/* ---------- three resizable panes ---------- */}
       {/*
@@ -638,6 +672,7 @@ export default function RoomEditor({
                   fontSize: 13.5,
                   minimap: { enabled: true, size: "fit", showSlider: "always" },
                   padding: { top: 16 },
+                  readOnly: ended,
                   scrollBeyondLastLine: false,
                   renderLineHighlight: "line",
                   smoothScrolling: true,

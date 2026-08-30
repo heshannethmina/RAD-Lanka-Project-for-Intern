@@ -1,10 +1,31 @@
 import Link from "next/link";
 import Reveal from "./Reveal";
 
+/*
+ * Priced on interview time, not seats.
+ *
+ * A seat licence punishes a small team that interviews occasionally, which is
+ * exactly who this is for. Billing the thing that costs us something — a live
+ * room holding a hub goroutine and a sandbox — means a company that runs two
+ * interviews a month pays for two interviews a month.
+ *
+ * The unit prices are deliberately ordered: Pro works out at roughly $0.33 an
+ * interview-hour, Enterprise at $0.50. Pay-as-you-go costing *more* per unit
+ * than the committed plan is the normal shape — you pay a premium for not
+ * committing — and it means Pro is the better deal right up to its ceiling,
+ * after which Enterprise is the only thing that fits.
+ *
+ * Time is counted only while a room is live. The timer starts when the
+ * interview opens and stops when it ends, so a room left open in a tab
+ * overnight is not billed for the night.
+ */
+
 type Plan = {
   name: string;
   amount: string;
   period: string;
+  /** The line under the price: what it works out at, or what it covers. */
+  note: string;
   features: string[];
   cta: string;
   href: string;
@@ -13,40 +34,45 @@ type Plan = {
 
 const PLANS: Plan[] = [
   {
-    name: "Starter",
+    name: "Free",
     amount: "$0",
-    period: "forever",
+    period: "for life",
+    note: "2 interviews, 20 minutes of interview time in total",
     features: [
-      "5 interviews per month",
-      "1 seat",
-      "Core languages",
-      "7-day history",
+      "2 interviews — ever, not per month",
+      "10 minutes each",
+      "Shared editor and live code execution",
+      "Candidate joins from a link, no account",
     ],
     cta: "Start free",
     href: "/register",
   },
   {
-    name: "Team",
-    amount: "$39",
-    period: "per interviewer / month",
+    name: "Pro",
+    amount: "$10",
+    period: "per month",
+    note: "About $0.33 per interview-hour",
     features: [
-      "Unlimited interviews",
-      "Up to 10 seats",
-      "All languages",
-      "Question bank",
-      "90-day history",
+      "30 interviews a month",
+      "Up to 1 hour each — 30 interview-hours",
+      "Schedule ahead, timed automatically",
+      "Question bank and templates",
+      "Interview history",
     ],
-    cta: "Start trial",
+    cta: "Choose Pro",
     href: "/register",
     recommended: true,
   },
   {
-    name: "Campus",
-    amount: "Custom",
-    period: "pricing",
+    name: "Enterprise",
+    amount: "$0.50",
+    period: "per interview-hour",
+    note: "Billed by the minute. No monthly commitment",
     features: [
-      "Unlimited interviews and seats",
-      "Bulk candidate links",
+      "Unlimited interviews",
+      "Unlimited hours",
+      "Pay only for time actually used",
+      "Everything in Pro",
       "Priority support",
     ],
     cta: "Talk to us",
@@ -86,8 +112,9 @@ export default function Pricing() {
             Simple pricing.
           </h2>
           <p className="mt-4 max-w-xl text-[16px] leading-relaxed text-ink-body">
-            Every plan includes the shared editor and real, sandboxed
-            execution.
+            You pay for interview time, not seats. The timer starts when an
+            interview begins and stops when it ends, so you are never charged
+            for a room sitting open in a tab.
           </p>
         </Reveal>
 
@@ -120,6 +147,13 @@ export default function Pricing() {
                   <span className="text-[13px] text-ink-muted">
                     {plan.period}
                   </span>
+                </p>
+
+                {/* The unit price, stated plainly. The whole model turns on
+                    comparing $0.33 with $0.50, and a reader who has to work
+                    that out themselves will not bother. */}
+                <p className="mt-2 min-h-[32px] text-[13px] leading-snug text-ink-muted">
+                  {plan.note}
                 </p>
 
                 <ul className="mt-7 flex-1 space-y-2.5">

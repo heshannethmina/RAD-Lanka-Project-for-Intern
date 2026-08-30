@@ -33,6 +33,10 @@ type joinRequest struct {
 // that room to a new client are made by the same goroutine, in order, so a
 // client can never be given a hub that is already shutting down.
 type Registry struct {
+	// onEnded is handed to every hub it creates, so the store can record an
+	// interview that ran out of time. Nil in tests.
+	onEnded func(roomID string)
+
 	// Owned by Run.
 	rooms map[string]*roomEntry
 
@@ -41,12 +45,14 @@ type Registry struct {
 	probe chan chan int
 }
 
-func NewRegistry() *Registry {
+// NewRegistry builds the room registry. onEnded may be nil.
+func NewRegistry(onEnded func(roomID string)) *Registry {
 	return &Registry{
-		rooms: make(map[string]*roomEntry),
-		join:  make(chan joinRequest),
-		leave: make(chan string),
-		probe: make(chan chan int),
+		onEnded: onEnded,
+		rooms:   make(map[string]*roomEntry),
+		join:    make(chan joinRequest),
+		leave:   make(chan string),
+		probe:   make(chan chan int),
 	}
 }
 
@@ -68,7 +74,7 @@ func (r *Registry) Run() {
 		case req := <-r.join:
 			e, ok := r.rooms[req.roomID]
 			if !ok {
-				e = &roomEntry{hub: NewHub(req.roomID)}
+				e = &roomEntry{hub: NewHub(req.roomID, r.onEnded)}
 				r.rooms[req.roomID] = e
 				go e.hub.Run()
 				log.Printf("ws: room %q opened", req.roomID)

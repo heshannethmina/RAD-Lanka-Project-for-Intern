@@ -199,6 +199,7 @@ One JSON envelope in both directions, so the client only ever parses one shape:
 | `prompt` | both | `prompt` | The interview question. Accepted from an **interviewer only**; room state, so it is in the snapshot |
 | `activity` | both | `kind`, `lines`, `ms`, `text`, `activity`, `event` | Candidate left, returned, or pasted. Accepted from a **candidate only**; the tally and the new event ride along |
 | `pointer` | both | `x`, `y`, `role` | Mouse position as a fraction of the viewport. Relayed, never stored |
+| `ended` | server → client | — | The interview ran out of time. The room goes read-only |
 
 Edits carry the **whole document**, not a diff. That is deliberate: the hub
 goroutine serialises them, so last-write-wins is well defined without OT.
@@ -704,6 +705,66 @@ is most of what gets said in an interview, and without it that has to be typed.
   state, no re-render per mouse move — see `.pointer-ghost` in `globals.css`.
 - `pointer-events-none` throughout. This floats over Monaco, and a layer that
   swallowed clicks would make the room unusable.
+
+### Pricing, plans and the clock
+
+Priced on interview time, not seats. A live room holds a hub goroutine and a
+sandbox, and that is the thing that actually costs something; a seat licence
+would punish a small team that interviews occasionally, which is exactly who
+this is for.
+
+`internal/plan` is the single definition. If the marketing page and this
+disagree, the page is wrong and somebody finds out by being refused.
+
+| | Free | Pro | Enterprise |
+|---|---|---|---|
+| Interviews | 2 **for life** | 30 / month | unlimited |
+| Each | 10 min | 60 min | unlimited |
+| Price | — | $10/mo | $0.50 per interview-hour |
+| Unit | — | ~$0.33/hr | $0.50/hr |
+
+Enterprise costs **more** per unit than Pro, which is the right shape: you pay
+a premium for not committing. It also means Pro is the better deal right up to
+its ceiling, after which Enterprise is the only thing that fits.
+
+**The clock starts when the candidate arrives**, not when the room is created
+and not when the interviewer opens it. A room booked on Monday and held on
+Friday gets its full time, and an interviewer opening early to write the
+question does not burn the candidate's minutes. `StartRoom` uses
+`COALESCE(started_at, now())` so two people arriving in the same millisecond
+cannot both stamp it — the first write wins and the second is a no-op rather
+than moving the deadline.
+
+**The deadline reaches the hub through the `Grant`** an authorizer returns.
+The authorizer is already looking the room up, so asking separately would be a
+second query per join and the two answers could disagree. The first client
+through sets it; `SetDeadline` ignores later ones, or a second joiner could
+extend an interview by reporting a deadline further out. Pinned by
+`TestLaterJoinCannotExtendTheDeadline`.
+
+**On expiry the room goes read-only, and nobody is disconnected.** Cutting the
+sockets would leave both people staring at a reconnect spinner with no idea
+why; an `ended` frame lets the UI say what happened, and they can still read
+and copy the code. Edits after that are dropped silently — the client has
+already been told, and an error per keystroke would be noise on top of it.
+
+Two things about the numbers:
+
+- **Duration is clamped, not rejected.** Somebody on Free asking for an hour
+  wants an interview; ten minutes with the limit shown beats an error telling
+  them to try again with a smaller number.
+- **The allowance is counted from the `rooms` table**, not a separate counter.
+  The rooms are the record, and a counter would be one more thing to keep in
+  step with them. Exhausting it answers **402**, not 403 — this is not a
+  permission problem, and the difference tells the client whether to offer an
+  upgrade or an apology.
+
+`plan.ByName` falls back to Free for anything it does not recognise, so a row
+written by a newer build fails closed.
+
+**There is no billing.** `users.plan` is the entire subscription system; move
+somebody to Pro with an UPDATE. Stripe is a separate piece of work needing a
+company entity and tax setup, and is well beyond a pilot.
 
 ### Still stubbed
 - Nothing of the *document* persists. A room's text lives only in its hub

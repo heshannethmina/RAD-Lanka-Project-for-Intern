@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -37,19 +38,32 @@ const (
 // sockets, and it should not grow a dependency on the store to do it. The
 // server wires in an implementation that accepts either an interviewer's
 // session token or a room's invite token.
-type Authorizer func(ctx context.Context, roomID, token string) (Role, error)
+type Authorizer func(ctx context.Context, roomID, token string) (Grant, error)
+
+// Grant is what an authorizer decided: who this connection is, and how long
+// the interview has left.
+//
+// The deadline arrives with the authorization because the authorizer is
+// already looking the room up. Asking separately would be a second query on
+// every join, and the two answers could disagree.
+type Grant struct {
+	Role Role
+	// EndsAt is when the interview must stop. Zero means no limit, which is
+	// what an unmetered plan looks like from here.
+	EndsAt time.Time
+}
 
 // AllowAll is an Authorizer that admits everyone as an interviewer. It exists
 // for tests, and is named so that using it in the server is obviously wrong at
 // the call site.
-func AllowAll(context.Context, string, string) (Role, error) {
-	return RoleInterviewer, nil
+func AllowAll(context.Context, string, string) (Grant, error) {
+	return Grant{Role: RoleInterviewer}, nil
 }
 
 // AllowAllAsCandidate is AllowAll with the lesser role, for tests that need to
 // prove a candidate is refused something.
-func AllowAllAsCandidate(context.Context, string, string) (Role, error) {
-	return RoleCandidate, nil
+func AllowAllAsCandidate(context.Context, string, string) (Grant, error) {
+	return Grant{Role: RoleCandidate}, nil
 }
 
 // Upgrader is exported so the server can tighten CheckOrigin at startup, where
@@ -127,7 +141,7 @@ func Handler(reg *Registry, authorize Authorizer) http.HandlerFunc {
 		// access log if one is ever enabled, which is the accepted cost; the
 		// alternative, Sec-WebSocket-Protocol smuggling, is worse to read and
 		// no more secret.
-		role, err := authorize(r.Context(), roomID, r.URL.Query().Get("token"))
+		grant, err := authorize(r.Context(), roomID, r.URL.Query().Get("token"))
 		if err != nil {
 			if errors.Is(err, ErrUnauthorized) {
 				// Again before the upgrade: a 401 is something the client can
@@ -153,7 +167,11 @@ func Handler(reg *Registry, authorize Authorizer) http.HandlerFunc {
 		// when the registry decides whether to close the room.
 		defer reg.Leave(roomID)
 
-		c := NewClient(hub, conn, role)
+		// The first client through sets the room's deadline. Later joins carry
+		// the same value and the hub ignores the repeats.
+		hub.SetDeadline(grant.EndsAt)
+
+		c := NewClient(hub, conn, grant.Role)
 		hub.Register(c)
 		c.Run()
 	}

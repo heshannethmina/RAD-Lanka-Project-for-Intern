@@ -15,7 +15,22 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 /** Namespaced so it cannot collide with anything else on localhost. */
 const TOKEN_KEY = "syncr.session";
 
-export type User = { id: number; email: string };
+export type User = { id: number; email: string; plan: string };
+
+/** What the current plan allows, and how much of it is gone. */
+export type Usage = {
+  plan_label: string;
+  interviews_used: number;
+  interviews_included: number;
+  unlimited_interviews: boolean;
+  /** Longest a single interview may run, 0 when unlimited. */
+  max_minutes: number;
+  used_minutes: number;
+  /** True when the allowance never resets — a trial, not a monthly budget. */
+  lifetime: boolean;
+};
+
+export type Me = User & { usage: Usage };
 
 export type Room = {
   id: string;
@@ -23,6 +38,11 @@ export type Room = {
   language: string;
   /** The interview question. Only the owner may change it. */
   prompt: string;
+  duration_minutes: number;
+  scheduled_at: string | null;
+  started_at: string | null;
+  /** Absolute deadline, null until somebody opens the room. */
+  ends_at: string | null;
   created_at: string;
   closed_at: string | null;
   open: boolean;
@@ -154,13 +174,25 @@ export const api = {
     setToken(null);
   },
 
-  me: (signal?: AbortSignal) => request<User>("/api/me", { auth: true, signal }),
+  me: (signal?: AbortSignal) => request<Me>("/api/me", { auth: true, signal }),
 
-  createRoom: (title: string, language: string) =>
+  createRoom: (opts: {
+    title: string;
+    language: string;
+    /** Clamped to the plan by the server; 0 means "whatever the plan allows". */
+    durationMinutes?: number;
+    /** When the interviewer means to hold it. Advisory. */
+    scheduledAt?: string | null;
+  }) =>
     request<CreatedRoom>("/api/rooms", {
       method: "POST",
       auth: true,
-      body: { title, language },
+      body: {
+        title: opts.title,
+        language: opts.language,
+        duration_minutes: opts.durationMinutes ?? 0,
+        scheduled_at: opts.scheduledAt ?? null,
+      },
     }),
 
   listRooms: (signal?: AbortSignal) =>

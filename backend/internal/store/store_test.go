@@ -183,7 +183,14 @@ func newRoom(t *testing.T, s *store.Store, ownerID int64) (*store.Room, string) 
 	if err != nil {
 		t.Fatalf("invite: %v", err)
 	}
-	r, err := s.CreateRoom(context.Background(), id, ownerID, "Backend screen", "python", inviteHash)
+	r, err := s.CreateRoom(context.Background(), store.NewRoom{
+		ID:              id,
+		OwnerID:         ownerID,
+		Title:           "Backend screen",
+		Language:        "python",
+		Duration:        30 * time.Minute,
+		InviteTokenHash: inviteHash,
+	})
 	if err != nil {
 		t.Fatalf("create room: %v", err)
 	}
@@ -323,5 +330,97 @@ func TestRoomsByOwnerIsScopedAndOrdered(t *testing.T) {
 	}
 	if empty == nil {
 		t.Fatal("want empty slice, got nil")
+	}
+}
+
+func TestNewRoomHasNotStartedUntilSomebodyJoins(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	u := newUser(t, s)
+	r, _ := newRoom(t, s, u.ID)
+
+	if r.StartedAt != nil {
+		t.Fatal("a freshly created room reported itself started")
+	}
+	if !r.EndsAt().IsZero() {
+		t.Fatal("a room nobody has opened already has a deadline")
+	}
+
+	started, err := s.StartRoom(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if started.StartedAt == nil {
+		t.Fatal("StartRoom did not stamp the start")
+	}
+	if started.EndsAt().IsZero() {
+		t.Fatal("a started room has no deadline")
+	}
+}
+
+// The clock must not restart when the second person arrives, or an interview
+// could be extended indefinitely by rejoining.
+func TestStartRoomIsIdempotent(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	u := newUser(t, s)
+	r, _ := newRoom(t, s, u.ID)
+
+	first, err := s.StartRoom(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("first start: %v", err)
+	}
+	second, err := s.StartRoom(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("second start: %v", err)
+	}
+	if !first.StartedAt.Equal(*second.StartedAt) {
+		t.Fatalf("the clock restarted: %v then %v", first.StartedAt, second.StartedAt)
+	}
+}
+
+// Counting is what the plan allowance is enforced from, so it must be scoped
+// to the owner.
+func TestCountRoomsIsPerOwner(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	mine := newUser(t, s)
+	theirs := newUser(t, s)
+
+	for range 3 {
+		newRoom(t, s, mine.ID)
+	}
+	newRoom(t, s, theirs.ID)
+
+	n, err := s.CountRooms(ctx, mine.ID, true)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("counted %d, want 3", n)
+	}
+}
+
+// A booking is not usage: a room nobody opened must contribute nothing.
+func TestUsedDurationIgnoresRoomsThatNeverStarted(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	u := newUser(t, s)
+	newRoom(t, s, u.ID)
+
+	used, err := s.UsedDuration(ctx, u.ID, true)
+	if err != nil {
+		t.Fatalf("used: %v", err)
+	}
+	if used != 0 {
+		t.Fatalf("an unopened room counted %v of usage", used)
+	}
+}
+
+func TestNewUserStartsOnTheFreePlan(t *testing.T) {
+	s := open(t)
+	u := newUser(t, s)
+	if u.Plan != "free" {
+		t.Fatalf("plan = %q, want free", u.Plan)
 	}
 }

@@ -30,6 +30,7 @@ function formatDate(iso: string): string {
 
 export default function Dashboard() {
   const { status, user, signOut } = useAuth("/login");
+  const usage = status === "signedIn" ? user.usage : null;
 
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,9 @@ export default function Dashboard() {
 
   const [title, setTitle] = useState("");
   const [language, setLanguage] = useState("python");
+  // 0 means "whatever the plan allows", which is the right default: somebody
+  // on Free asking for an hour would only have it clamped anyway.
+  const [minutes, setMinutes] = useState(0);
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -83,7 +87,11 @@ export default function Dashboard() {
     setCreating(true);
     setError(null);
     try {
-      const room = await api.createRoom(title.trim(), language);
+      const room = await api.createRoom({
+        title: title.trim(),
+        language,
+        durationMinutes: minutes,
+      });
       setInvites((prev) => ({ ...prev, [room.id]: room.invite_token }));
       // Prepend rather than refetch: the listing is newest-first, so this is
       // where the server would have put it anyway.
@@ -183,6 +191,35 @@ export default function Dashboard() {
           an account.
         </p>
 
+        {usage && (
+          <div className="card mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 p-4 text-[13px]">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+              <span className="font-medium text-ink">{usage.plan_label} plan</span>
+              <span className="text-ink-muted">
+                {usage.unlimited_interviews
+                  ? `${usage.interviews_used} interviews run`
+                  : `${usage.interviews_used} of ${usage.interviews_included} interviews used`}
+                {/* "for life" vs "this month" is the whole difference between
+                    a trial and an allowance, and somebody deciding whether to
+                    upgrade needs to know which they are looking at. */}
+                {!usage.unlimited_interviews &&
+                  (usage.lifetime ? " — for life" : " this month")}
+              </span>
+              {usage.max_minutes > 0 && (
+                <span className="text-ink-muted">
+                  Up to {usage.max_minutes} min each
+                </span>
+              )}
+            </div>
+            {!usage.unlimited_interviews &&
+              usage.interviews_used >= usage.interviews_included && (
+                <Link href="/#pricing" className="font-medium text-accent hover:underline">
+                  Upgrade for more
+                </Link>
+              )}
+          </div>
+        )}
+
         <form
           onSubmit={onCreate}
           className="card mt-8 flex flex-col gap-3 p-4 sm:flex-row sm:items-end"
@@ -201,7 +238,29 @@ export default function Dashboard() {
               disabled={creating}
             />
           </div>
-          <div className="sm:w-44">
+          <div className="sm:w-36">
+            <label htmlFor="minutes" className="field-label">
+              Length
+            </label>
+            <select
+              id="minutes"
+              className="field"
+              value={minutes}
+              onChange={(e) => setMinutes(Number(e.target.value))}
+              disabled={creating}
+            >
+              {/* Zero first, because letting the plan decide is the right
+                  answer for most people and needs no explanation. */}
+              <option value={0}>Plan default</option>
+              {[10, 15, 30, 45, 60].map((m) => (
+                <option key={m} value={m}>
+                  {m} min
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sm:w-36">
             <label htmlFor="language" className="field-label">
               Language
             </label>
@@ -270,6 +329,8 @@ export default function Dashboard() {
                         {" · "}
                         {LANGUAGES.find((l) => l.id === room.language)?.label ??
                           room.language}
+                        {" · "}
+                        {room.duration_minutes} min
                         {" · "}
                         {formatDate(room.created_at)}
                       </p>

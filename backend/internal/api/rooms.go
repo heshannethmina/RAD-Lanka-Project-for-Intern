@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/heshannethmina/interview-platform/backend/internal/auth"
 	"github.com/heshannethmina/interview-platform/backend/internal/judge0"
+	"github.com/heshannethmina/interview-platform/backend/internal/plan"
 	"github.com/heshannethmina/interview-platform/backend/internal/store"
 )
 
@@ -30,26 +32,46 @@ const roomListLimit = 200
 const maxPromptLen = 20_000
 
 type roomJSON struct {
-	ID        string     `json:"id"`
-	Title     string     `json:"title"`
-	Language  string     `json:"language"`
-	Prompt    string     `json:"prompt"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Language string `json:"language"`
+	Prompt   string `json:"prompt"`
+	// DurationMinutes is how long it may run once started.
+	DurationMinutes int        `json:"duration_minutes"`
+	ScheduledAt     *time.Time `json:"scheduled_at"`
+	StartedAt       *time.Time `json:"started_at"`
+	// EndsAt is when the timer runs out, absolute so the client does not have
+	// to agree with us about the current time — only about the deadline.
+	EndsAt    *time.Time `json:"ends_at"`
 	CreatedAt time.Time  `json:"created_at"`
 	ClosedAt  *time.Time `json:"closed_at"`
 	Open      bool       `json:"open"`
+}
+
+// endsAt returns the deadline, or nil for a room nobody has opened yet.
+func endsAt(r *store.Room) *time.Time {
+	e := r.EndsAt()
+	if e.IsZero() {
+		return nil
+	}
+	return &e
 }
 
 func toRoomJSON(r *store.Room) roomJSON {
 	// OwnerID is deliberately absent: it is an internal key, and every route
 	// that returns a room has already checked ownership.
 	return roomJSON{
-		ID:        r.ID,
-		Title:     r.Title,
-		Language:  r.Language,
-		Prompt:    r.Prompt,
-		CreatedAt: r.CreatedAt,
-		ClosedAt:  r.ClosedAt,
-		Open:      r.Open(),
+		ID:              r.ID,
+		Title:           r.Title,
+		Language:        r.Language,
+		Prompt:          r.Prompt,
+		DurationMinutes: int(r.Duration / time.Minute),
+		ScheduledAt:     r.ScheduledAt,
+		StartedAt:       r.StartedAt,
+		EndsAt:          endsAt(r),
+		CreatedAt:       r.CreatedAt,
+		ClosedAt:        r.ClosedAt,
+		Open:            r.Open(),
 	}
 }
 
@@ -77,6 +99,12 @@ func CreateRoom(s *store.Store) http.HandlerFunc {
 		var req struct {
 			Title    string `json:"title"`
 			Language string `json:"language"`
+			// Minutes the interview may run. Clamped to the plan; zero means
+			// "give me whatever the plan allows".
+			DurationMinutes int `json:"duration_minutes"`
+			// When the interviewer means to hold it. Advisory — the timer runs
+			// from the first join, not from this.
+			ScheduledAt *time.Time `json:"scheduled_at"`
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxRoomBodyBytes)
 		// An empty body is a valid "create me a room with the defaults", so
@@ -101,6 +129,30 @@ func CreateRoom(s *store.Store) http.HandlerFunc {
 			return
 		}
 
+		// The allowance check. Counted from the rooms table rather than a
+		// separate counter, because the rooms are the record.
+		tier := plan.ByName(u.Plan)
+		if !tier.UnlimitedInterviews() {
+			used, err := s.CountRooms(r.Context(), u.ID, tier.Lifetime)
+			if err != nil {
+				log.Printf("api: count rooms: %v", err)
+				writeError(w, http.StatusInternalServerError, "could not check your plan")
+				return
+			}
+			if used >= tier.MaxInterviews {
+				// 402 rather than 403: this is not a permission problem, it is
+				// an exhausted allowance, and the difference tells the client
+				// whether to offer an upgrade or an apology.
+				writeError(w, http.StatusPaymentRequired, planLimitMessage(tier))
+				return
+			}
+		}
+
+		// Clamped rather than rejected: somebody on Free who asks for an hour
+		// wants an interview, and ten minutes with the limit shown beats an
+		// error telling them to try again with a smaller number.
+		duration := tier.ClampDuration(time.Duration(req.DurationMinutes) * time.Minute)
+
 		id, err := auth.NewRoomID()
 		if err != nil {
 			log.Printf("api: room id: %v", err)
@@ -114,7 +166,15 @@ func CreateRoom(s *store.Store) http.HandlerFunc {
 			return
 		}
 
-		room, err := s.CreateRoom(r.Context(), id, u.ID, req.Title, req.Language, inviteHash)
+		room, err := s.CreateRoom(r.Context(), store.NewRoom{
+			ID:              id,
+			OwnerID:         u.ID,
+			Title:           req.Title,
+			Language:        req.Language,
+			ScheduledAt:     req.ScheduledAt,
+			Duration:        duration,
+			InviteTokenHash: inviteHash,
+		})
 		if err != nil {
 			log.Printf("api: create room: %v", err)
 			writeError(w, http.StatusInternalServerError, "could not create the room")
@@ -284,6 +344,22 @@ func UpdatePrompt(s *store.Store) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// planLimitMessage says what ran out and what to do, rather than "limit
+// reached" — somebody who has just been refused needs the number and the way
+// forward in the same sentence.
+func planLimitMessage(tier plan.Plan) string {
+	if tier.Lifetime {
+		return fmt.Sprintf(
+			"The %s plan includes %d interviews in total, and you have used them. Upgrade to run more.",
+			tier.Label, tier.MaxInterviews,
+		)
+	}
+	return fmt.Sprintf(
+		"The %s plan includes %d interviews a month, and you have used them. They reset at the start of next month.",
+		tier.Label, tier.MaxInterviews,
+	)
 }
 
 // ownedRoom resolves {roomID} and confirms the signed-in interviewer owns it.

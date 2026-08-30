@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, getToken, isUnauthorized, setToken, type User } from "./api";
+import { api, getToken, isUnauthorized, setToken, type Me } from "./api";
 
 type AuthState =
   /** Still asking the server whether the stored token is any good. */
   | { status: "loading"; user: null }
-  | { status: "signedIn"; user: User }
+  | { status: "signedIn"; user: Me }
   | { status: "signedOut"; user: null };
 
 /**

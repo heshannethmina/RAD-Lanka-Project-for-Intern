@@ -17,7 +17,7 @@ import (
 func newTestServer(t *testing.T) (*Registry, func(room string) string) {
 	t.Helper()
 
-	reg := NewRegistry()
+	reg := NewRegistry(nil)
 	go reg.Run()
 
 	mux := http.NewServeMux()
@@ -178,7 +178,7 @@ func TestPresenceTracksRoomSize(t *testing.T) {
 // flakily. The mechanism under test is the channel plus the single Run
 // goroutine, and that is exercised fully here.
 func TestConcurrentEditsSerialise(t *testing.T) {
-	h := NewHub("unit")
+	h := NewHub("unit", nil)
 	go h.Run()
 	defer h.Stop()
 
@@ -261,7 +261,7 @@ func TestConcurrentEditsSerialise(t *testing.T) {
 // the test goroutine is safe precisely because Run is not started, so nothing
 // else owns the state.
 func TestSlowClientIsDropped(t *testing.T) {
-	h := NewHub("unit")
+	h := NewHub("unit", nil)
 
 	stuck := &Client{hub: h, send: make(chan []byte, 1)}
 	healthy := &Client{hub: h, send: make(chan []byte, 4)}

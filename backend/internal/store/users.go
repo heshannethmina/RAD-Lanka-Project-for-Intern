@@ -20,7 +20,10 @@ type User struct {
 	ID           int64
 	Email        string
 	PasswordHash string
-	CreatedAt    time.Time
+	// Plan is the pricing tier. Plain text; internal/plan turns it into limits
+	// and falls back to Free for anything it does not recognise.
+	Plan      string
+	CreatedAt time.Time
 }
 
 // CreateUser inserts an interviewer, returning ErrConflict if the email is
@@ -33,8 +36,8 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*Us
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO users (email, password_hash)
 		VALUES ($1, $2)
-		RETURNING id, email, password_hash, created_at
-	`, email, passwordHash).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
+		RETURNING id, email, password_hash, plan, created_at
+	`, email, passwordHash).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Plan, &u.CreatedAt)
 
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -51,10 +54,10 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*Us
 func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, password_hash, created_at
+		SELECT id, email, password_hash, plan, created_at
 		FROM users
 		WHERE lower(email) = lower($1)
-	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
+	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Plan, &u.CreatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -69,10 +72,10 @@ func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
 func (s *Store) UserByID(ctx context.Context, id int64) (*User, error) {
 	var u User
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, password_hash, created_at
+		SELECT id, email, password_hash, plan, created_at
 		FROM users
 		WHERE id = $1
-	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
+	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Plan, &u.CreatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

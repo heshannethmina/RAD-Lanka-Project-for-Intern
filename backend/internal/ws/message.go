@@ -63,6 +63,11 @@ const (
 	// Not stored. A pointer position is stale the instant it arrives, so
 	// there is nothing sensible to put in a snapshot.
 	TypePointer MessageType = "pointer"
+
+	// TypeEnded means the interview has run out of time. The room stays
+	// readable so both people can copy anything they need, but nothing
+	// further is accepted.
+	TypeEnded MessageType = "ended"
 )
 
 // Activity kinds, sent by the candidate's client.
@@ -160,6 +165,12 @@ type Message struct {
 	// X and Y are fractions of the viewport, 0..1, on TypePointer.
 	X float64 `json:"x,omitempty"`
 	Y float64 `json:"y,omitempty"`
+	// EndsAt is the deadline in milliseconds since the epoch, on TypeSnapshot.
+	// Absolute rather than a countdown, so the client does not have to agree
+	// with the server about the current time — only about when it ends.
+	EndsAt *int64 `json:"ends_at,omitempty"`
+	// Ended is true when the interview is already over, on TypeSnapshot.
+	Ended bool `json:"ended,omitempty"`
 	// Events is the log so far, on TypeSnapshot. Sent to interviewers only:
 	// a candidate has no business reading the record kept about them mid
 	// interview, and it would be a distraction from the question.
