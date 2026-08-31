@@ -128,7 +128,11 @@ WHERE promo_code = 'SYNCR-PILOT';
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and on pull requests to `main`.
+`.github/workflows/ci.yml` runs on every pull request, and on pushes to
+`main`. Not on every push to every branch: a branch with an open pull request
+would build twice for one result, and the branch ruleset makes the pull
+request the check that counts. Pushes to `main` still build, because the merge
+commit is the thing that deploys and no pull request tested it as such.
 Three jobs, in parallel:
 
 | Job | Runs |
@@ -151,10 +155,12 @@ Dependabot (`.github/dependabot.yml`) opens grouped weekly update pull
 requests for Go, npm and the actions themselves, so every upgrade goes through
 the suite above before anyone looks at it.
 
-Nothing here gates deployment. Render and Vercel both build straight from a
-push, so a red CI run still ships. Render's service settings have an option to
-wait for checks before deploying; turning it on is the one manual step that
-closes that gap.
+A branch ruleset on `main` requires `Go`, `Next.js` and `govulncheck` to pass
+before a pull request can merge, so a red run cannot reach `main` in the first
+place. Two things it does not cover: pushes made with a bypass, and the gap
+between merging and deploying — Render and Vercel build straight from the push
+to `main`, so a merge is a deploy. Render's service settings can additionally
+wait for checks.
 
 ## Deploying
 

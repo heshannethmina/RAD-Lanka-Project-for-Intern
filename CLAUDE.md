@@ -969,7 +969,11 @@ company entity and tax setup, and is well beyond a pilot.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml`, on every push and on pull requests to `main`.
+`.github/workflows/ci.yml`, on every pull request and on pushes to `main`.
+Deliberately *not* every push to every branch — a branch with an open pull
+request built twice for one result, reported side by side as "CI / Go (push)"
+and "CI / Go (pull_request)". `main` still builds on push because the merge
+commit is what deploys and no pull request tested that commit as such.
 Three parallel jobs: **Go** (gofmt gate, vet, build, `go test -race ./...`),
 **Next.js** (`npm ci`, `tsc --noEmit`, eslint, `next build`), and
 **govulncheck**.

@@ -14,10 +14,18 @@
 
 name: CI
 
+# Pull requests are where the checks matter, because the branch ruleset on
+# main requires them to pass before a merge. Running on every push as well
+# meant every commit on a branch with an open PR was built twice — the same
+# three jobs reported as "CI / Go (push)" and "CI / Go (pull_request)" side by
+# side, for one result.
+#
+# Pushes to main are still built. That is the merge commit itself, which no
+# pull request ever tested as such, and it is what deploys.
 on:
   push:
-  pull_request:
     branches: [main]
+  pull_request:
 
 # A second push to the same branch makes the first run irrelevant. Cancelling
 # it keeps the queue short and the feedback fast.
