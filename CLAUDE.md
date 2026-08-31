@@ -939,8 +939,11 @@ company entity and tax setup, and is well beyond a pilot.
 - Language selection is per-client, not synced, so two people in one room can
   submit the same source under different languages. The room now *has* a
   language column, so the fix is to make the client honour it.
-- No rate limiting on login. bcrypt makes it slow, not impossible. Promo
-  redemption *is* limited, but only per account and only in memory.
+- Rate limiting is entirely in memory, so it resets on restart and does not
+  add up across instances. Login (10 per 5 min) and register (5 per 10 min)
+  are limited by IP; promo redemption is per account. That is enough for a
+  single instance — a second one would need Redis, which is already in the
+  design for WS fan-out.
 - Making somebody an admin still means editing `OWNER_EMAILS` and
   redeploying. There is no way to grant it from the UI, deliberately — the
   environment is what makes the bootstrap work at all.
