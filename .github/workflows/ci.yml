@@ -118,6 +118,16 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      # Next generates the route and layout prop types — LayoutProps, PageProps
+      # — into .next/types, and tsconfig.json includes that directory.
+      # app/layout.tsx uses LayoutProps<"/">, so tsc run before they exist
+      # fails with "Cannot find name". This is invisible on a developer
+      # machine, where a .next from some earlier build is always lying around;
+      # a clean checkout is the only place it shows up, which is exactly what
+      # CI is for.
+      - name: next typegen
+        run: npx next typegen
+
       - name: tsc
         # next build type-checks too, but this fails in seconds rather than
         # after a full production build.
