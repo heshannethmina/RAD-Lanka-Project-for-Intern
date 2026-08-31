@@ -142,8 +142,25 @@ func TestTallySurvivesAReload(t *testing.T) {
 	next(t, candidate, TypeSnapshot)
 	waitPresence(t, candidate, 1)
 
+	// A witness already in the room, to order the send against the join.
+	//
+	// Writing to one socket and immediately dialling another guarantees
+	// nothing: the frames are still in flight while the new connection does
+	// its handshake, so the hub can build the joiner's snapshot first. There
+	// is no ordering between two independent connections, and the hub is
+	// right not to invent one. The hub mutates its state and only then
+	// relays, so a witness that has *received* the relay proves the state is
+	// already applied — and the hub is one goroutine, so any join it handles
+	// afterwards must see it.
+	witness := dial(t, room)
+	next(t, witness, TypeSnapshot)
+	waitPresence(t, witness, 2)
+
 	send(t, candidate, Message{Type: TypeActivity, Kind: ActivityPaste, Lines: 3})
 	send(t, candidate, Message{Type: TypeActivity, Kind: ActivityAway})
+
+	next(t, witness, TypeActivity)
+	next(t, witness, TypeActivity)
 
 	// A fresh connection stands in for the interviewer reloading the page.
 	joiner := dial(t, room)
@@ -233,10 +250,26 @@ func TestEventLogIsSentToInterviewersOnly(t *testing.T) {
 	next(t, candidate, TypeSnapshot)
 	waitPresence(t, candidate, 1)
 
+	// An observer already in the room, so the assertion below cannot pass for
+	// the wrong reason.
+	//
+	// Sending and then immediately dialling proves nothing: if the hub has not
+	// read the activity yet, the log is empty and "the joiner got no events"
+	// is true even when the code is leaking the log to candidates. Activity is
+	// relayed to everyone but its author, so waiting for the observer to see
+	// both frames guarantees both are recorded before anybody else joins.
+	observer := dial(t, room)
+	next(t, observer, TypeSnapshot)
+	waitPresence(t, observer, 2)
+
 	send(t, candidate, Message{Type: TypeActivity, Kind: ActivityPaste, Lines: 1, Text: "secret"})
 	send(t, candidate, Message{Type: TypeActivity, Kind: ActivityAway})
 
-	// A candidate joining must not be handed the record kept about them.
+	next(t, observer, TypeActivity)
+	next(t, observer, TypeActivity)
+
+	// A candidate joining must not be handed the record kept about them —
+	// and by now there is definitely a record to withhold.
 	peer := dial(t, room)
 	peerSnap := next(t, peer, TypeSnapshot)
 	if len(peerSnap.Events) != 0 {
@@ -254,10 +287,30 @@ func TestInterviewerReceivesTheEventLogOnJoin(t *testing.T) {
 	next(t, candidate, TypeSnapshot)
 	waitPresence(t, candidate, 1)
 
+	// An interviewer already in the room, purely as a barrier.
+	//
+	// Writing to one socket and immediately dialling another guarantees
+	// nothing about the order the hub reads them: the activity frames are in
+	// flight while the second dial is still doing its TCP handshake and
+	// upgrade, so on a loaded machine the join can be processed first and the
+	// snapshot is built before anything has been logged. That is not a bug in
+	// the hub — two independent connections have no ordering between them —
+	// but it made this test fail roughly one CI run in three.
+	//
+	// The hub appends to the log and only then relays, so an observer that has
+	// *received* both frames proves both are already recorded. The hub is a
+	// single goroutine, so any join it processes afterwards must see them.
+	observer := dial(t, room+"?token=interviewer")
+	next(t, observer, TypeSnapshot)
+	waitPresence(t, observer, 2)
+
 	send(t, candidate, Message{
 		Type: TypeActivity, Kind: ActivityPaste, Lines: 1, Text: "pasted thing",
 	})
 	send(t, candidate, Message{Type: TypeActivity, Kind: ActivityAway})
+
+	next(t, observer, TypeActivity)
+	next(t, observer, TypeActivity)
 
 	interviewer := dial(t, room+"?token=interviewer")
 	snap := next(t, interviewer, TypeSnapshot)

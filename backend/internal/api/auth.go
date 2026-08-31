@@ -52,6 +52,10 @@ type userJSON struct {
 	ID    int64  `json:"id"`
 	Email string `json:"email"`
 	Plan  string `json:"plan"`
+	// IsAdmin tells the client whether to offer the admin UI. It is a hint
+	// for rendering only — every admin route checks for itself, because a
+	// client is free to lie about this and some will.
+	IsAdmin bool `json:"is_admin"`
 }
 
 // meJSON is the signed-in view: who you are, and what you have left.
@@ -91,15 +95,34 @@ type usageJSON struct {
 
 // effectivePlan is the tier a user actually gets right now.
 //
-// A live promotion overrides the subscription rather than replacing it, so a
-// grant that lapses drops somebody back to what they pay for instead of to
-// Free. Every limit check goes through here — a second place that reads
-// u.Plan directly is how a comped account quietly stops being comped.
+// Three sources, most specific first: the owner list, then a live promotion,
+// then the subscription. A promotion overrides the subscription rather than
+// replacing it, so a grant that lapses drops somebody back to what they pay
+// for instead of to Free. Every limit check goes through here — a second
+// place that reads u.Plan directly is how a comped account quietly stops
+// being comped.
 func effectivePlan(u *store.User) plan.Plan {
+	// The owner wins outright, and reads from the environment rather than the
+	// row. That is what makes the account usable before anything has been
+	// written to the database, and on the far side of a database that has
+	// been wiped.
+	if isOwner(u.Email) {
+		return plan.ByName(string(plan.Unlimited))
+	}
 	if u.PromoActive() {
 		return plan.ByName(u.PromoPlan)
 	}
 	return plan.ByName(u.Plan)
+}
+
+// isAdmin reports whether a user may reach the admin routes.
+//
+// Only the owner list today. When an is_admin column arrives it is ORed in
+// here, so there stays exactly one answer to "may this person administer the
+// deployment" — and the owner keeps working even if that column is wrong,
+// which is the property that makes the system recoverable.
+func isAdmin(u *store.User) bool {
+	return isOwner(u.Email)
 }
 
 func toUserJSON(u *store.User) userJSON {
@@ -109,7 +132,7 @@ func toUserJSON(u *store.User) userJSON {
 	// Plan is the *subscription*, not the tier in force — a promotion can be
 	// granting more than this says. Usage carries the effective one, and that
 	// is what the UI shows; this stays honest about what is being paid for.
-	return userJSON{ID: u.ID, Email: u.Email, Plan: u.Plan}
+	return userJSON{ID: u.ID, Email: u.Email, Plan: u.Plan, IsAdmin: isAdmin(u)}
 }
 
 // Register creates an interviewer account and logs it straight in, so the

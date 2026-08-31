@@ -109,7 +109,21 @@ func TestJoinerReceivesSnapshot(t *testing.T) {
 		t.Fatalf("first joiner got document %q, want empty", got.Text)
 	}
 
+	// A witness already in the room, to order the send against the join.
+	//
+	// Writing to one socket and immediately dialling another guarantees
+	// nothing: the frames are still in flight while the new connection does
+	// its handshake, so the hub can build the joiner's snapshot first. There
+	// is no ordering between two independent connections, and the hub is
+	// right not to invent one. The hub mutates its state and only then
+	// relays, so a witness that has *received* the relay proves the state is
+	// already applied — and the hub is one goroutine, so any join it handles
+	// afterwards must see it.
+	witness := dial(t, url)
+	next(t, witness, TypeSnapshot)
+
 	send(t, first, Message{Type: TypeEdit, Text: "package main"})
+	next(t, witness, TypeEdit)
 
 	// A client joining after the edit must be handed the current document,
 	// not an empty one.

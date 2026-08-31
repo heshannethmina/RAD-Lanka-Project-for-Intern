@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -63,9 +65,14 @@ func (l *promoLimiter) allow(userID int64) bool {
 
 	w, ok := l.windows[userID]
 	if !ok || time.Now().After(w.resetAt) {
+		l.windows[userID] = &promoWindow{failures: 1, resetAt: time.Now().Add(promoAttemptWindow)}
 		return true
 	}
-	return w.failures < promoAttemptLimit
+	if w.failures >= promoAttemptLimit {
+		return false
+	}
+	w.failures++
+	return true
 }
 
 // fail records a wrong guess. Only failures count: somebody redeeming three
@@ -135,7 +142,6 @@ func RedeemPromo(s *store.Store) http.HandlerFunc {
 		grant, err := s.RedeemPromoCode(r.Context(), code, u.ID, plan.Grantable)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
-			limiter.fail(u.ID)
 			writeError(w, http.StatusNotFound, "that code is not valid")
 			return
 		case errors.Is(err, store.ErrPromoExpired):
@@ -174,7 +180,8 @@ func RedeemPromo(s *store.Store) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("api: user %d redeemed promo %q (plan %s)", u.ID, grant.Code, grant.Plan)
+		fingerprint := sha256.Sum256([]byte(grant.Code))
+		log.Printf("api: user %d redeemed promo %s (plan %s)", u.ID, hex.EncodeToString(fingerprint[:6]), grant.Plan)
 		writeJSON(w, http.StatusOK, meFor(r.Context(), s, fresh))
 	}
 }

@@ -27,6 +27,8 @@ services:
     # so this only reports healthy once the schema is actually in place.
     healthCheckPath: /healthz
     envVars:
+      - key: APP_ENV
+        value: production
       - key: DATABASE_URL
         fromDatabase:
           name: syncr-db
@@ -38,7 +40,7 @@ services:
       #   JUDGE0_URL     https://judge0-ce.p.rapidapi.com
       #   JUDGE0_HEADERS X-RapidAPI-Key: <key>, X-RapidAPI-Host: judge0-ce.p.rapidapi.com
       #
-      # Re-check the language IDs first: ours are pinned to the 1.13.0 image
+      # Re-check the language IDs first: ours are pinned to the 1.13.1 image
       # and a hosted instance runs something newer. GET /languages and diff
       # 60/63/71 against Go, JavaScript and Python.
       #
@@ -56,6 +58,12 @@ services:
       # production URL. It is comma-separated, so add preview origins here too
       # if you want branch deploys to work.
       - key: CORS_ORIGIN
+        sync: false
+      # The operator's own accounts, comma-separated. These resolve to the
+      # Unlimited tier and reach the admin routes without anything being
+      # written to the database first — which is the only way in on a host
+      # with no shell and no SQL console.
+      - key: OWNER_EMAILS
         sync: false
 
 databases:

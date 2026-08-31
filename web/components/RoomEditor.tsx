@@ -156,9 +156,9 @@ async function runPythonLocally(source: string) {
 }
 
 /** Everything else, through the backend to Judge0. */
-async function runViaJudge0(language: string, source: string) {
+async function runViaJudge0(language: string, source: string, roomId: string, token: string) {
   try {
-    const result = await runCode(language, source);
+    const result = await runCode(language, source, roomId, token);
     return { text: formatRunResult(result), failed: isFailure(result) };
   } catch (err) {
     return {
@@ -462,7 +462,7 @@ export default function RoomEditor({
       const { text, failed: didFail } =
         language === "python"
           ? await runPythonLocally(source)
-          : await runViaJudge0(language, source);
+          : await runViaJudge0(language, source, roomId, token);
 
       setOutput(text);
       setFailed(didFail);

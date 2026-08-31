@@ -134,21 +134,6 @@ func CreateRoom(s *store.Store) http.HandlerFunc {
 		// The effective tier, so a redeemed promotion actually lifts the
 		// ceiling rather than only changing what the dashboard claims.
 		tier := effectivePlan(u)
-		if !tier.UnlimitedInterviews() {
-			used, err := s.CountRooms(r.Context(), u.ID, tier.Lifetime)
-			if err != nil {
-				log.Printf("api: count rooms: %v", err)
-				writeError(w, http.StatusInternalServerError, "could not check your plan")
-				return
-			}
-			if used >= tier.MaxInterviews {
-				// 402 rather than 403: this is not a permission problem, it is
-				// an exhausted allowance, and the difference tells the client
-				// whether to offer an upgrade or an apology.
-				writeError(w, http.StatusPaymentRequired, planLimitMessage(tier))
-				return
-			}
-		}
 
 		// Clamped rather than rejected: somebody on Free who asks for an hour
 		// wants an interview, and ten minutes with the limit shown beats an
@@ -168,7 +153,7 @@ func CreateRoom(s *store.Store) http.HandlerFunc {
 			return
 		}
 
-		room, err := s.CreateRoom(r.Context(), store.NewRoom{
+		newRoom := store.NewRoom{
 			ID:              id,
 			OwnerID:         u.ID,
 			Title:           req.Title,
@@ -176,7 +161,17 @@ func CreateRoom(s *store.Store) http.HandlerFunc {
 			ScheduledAt:     req.ScheduledAt,
 			Duration:        duration,
 			InviteTokenHash: inviteHash,
-		})
+		}
+		var room *store.Room
+		if tier.UnlimitedInterviews() {
+			room, err = s.CreateRoom(r.Context(), newRoom)
+		} else {
+			room, err = s.CreateRoomWithinPlan(r.Context(), newRoom, tier.MaxInterviews, tier.Lifetime)
+			if errors.Is(err, store.ErrQuotaExceeded) {
+				writeError(w, http.StatusPaymentRequired, planLimitMessage(tier))
+				return
+			}
+		}
 		if err != nil {
 			log.Printf("api: create room: %v", err)
 			writeError(w, http.StatusInternalServerError, "could not create the room")

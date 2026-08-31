@@ -22,6 +22,7 @@ var ErrNotFound = errors.New("store: not found")
 // ErrConflict means a uniqueness constraint rejected the write — today only
 // ever a duplicate email on registration.
 var ErrConflict = errors.New("store: conflict")
+var ErrQuotaExceeded = errors.New("store: quota exceeded")
 
 // Store owns a connection pool. The zero value is not usable; use Open.
 type Store struct {

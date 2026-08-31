@@ -1,7 +1,7 @@
 /**
  * Client for the Go REST API.
  *
- * The session token lives in localStorage and is sent as an Authorization
+ * The session token lives in sessionStorage and is sent as an Authorization
  * header. That is a deliberate trade made on the server side — see the note at
  * the top of backend/internal/api/auth.go. The short version: the web app and
  * the API are different origins in every environment, so a cookie would need
@@ -17,7 +17,16 @@ const TOKEN_KEY = "syncr.session";
 
 /** `plan` is the subscription, not necessarily the tier in force — a
  * promotion can be granting more. Read `usage` for what actually applies. */
-export type User = { id: number; email: string; plan: string };
+export type User = {
+  id: number;
+  email: string;
+  plan: string;
+  /**
+   * Whether to offer the admin UI. A rendering hint only — every admin route
+   * checks server-side, because a client is free to lie about this.
+   */
+  is_admin: boolean;
+};
 
 /** What the current plan allows, and how much of it is gone. */
 export type Usage = {
@@ -64,6 +73,38 @@ export type Room = {
  */
 export type CreatedRoom = Room & { invite_token: string };
 
+/** A promotion code as the admin API returns it. */
+export type PromoCode = {
+  code: string;
+  plan: string;
+  /** How many people may claim it; 0 means no ceiling. */
+  max_redemptions: number;
+  redemptions: number;
+  /** When the code stops being claimable. Null means never. */
+  expires_at: string | null;
+  /** How long a grant lasts once claimed; 0 means it never lapses. */
+  grant_days: number;
+  note: string;
+  created_at: string;
+  redeemers: string[];
+};
+
+/** An account as the admin API returns it. */
+export type AdminUser = {
+  id: number;
+  email: string;
+  /** What they are subscribed to. */
+  plan: string;
+  /** What they actually get — a promotion or the owner list can raise it. */
+  effective_plan: string;
+  is_admin: boolean;
+  promo_code?: string;
+  promo_expires_at: string | null;
+  rooms: number;
+  minutes: number;
+  created_at: string;
+};
+
 export type AuthResult = {
   token: string;
   expires_at: string;
@@ -89,7 +130,7 @@ export function getToken(): string | null {
   // Guarded for server rendering, where there is no localStorage at all.
   if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(TOKEN_KEY);
+    return window.sessionStorage.getItem(TOKEN_KEY);
   } catch {
     // Private mode and "block site data" both throw rather than return null.
     return null;
@@ -99,8 +140,8 @@ export function getToken(): string | null {
 export function setToken(token: string | null): void {
   if (typeof window === "undefined") return;
   try {
-    if (token === null) window.localStorage.removeItem(TOKEN_KEY);
-    else window.localStorage.setItem(TOKEN_KEY, token);
+    if (token === null) window.sessionStorage.removeItem(TOKEN_KEY);
+    else window.sessionStorage.setItem(TOKEN_KEY, token);
   } catch {
     // Not being able to persist is survivable: the session lasts the tab.
   }
@@ -252,6 +293,60 @@ export const api = {
       method: "POST",
       auth: true,
     }),
+
+  /**
+   * Operator routes. Every one of these answers 404 rather than 403 for a
+   * non-admin, so a failure here is indistinguishable from the endpoint not
+   * existing — which is the point.
+   */
+  admin: {
+    listPromo: (signal?: AbortSignal) =>
+      request<{ codes: PromoCode[] }>("/api/admin/promo", { auth: true, signal }).then(
+        (r) => r.codes,
+      ),
+
+    createPromo: (opts: {
+      code: string;
+      plan: string;
+      maxRedemptions: number;
+      grantDays: number;
+      note: string;
+    }) =>
+      request<PromoCode>("/api/admin/promo", {
+        method: "POST",
+        auth: true,
+        body: {
+          code: opts.code,
+          plan: opts.plan,
+          max_redemptions: opts.maxRedemptions,
+          grant_days: opts.grantDays,
+          note: opts.note,
+        },
+      }),
+
+    /**
+     * Deletes a code. `revokeGrants` also strips the access it already handed
+     * out — off by default, because stopping new claims and taking back what
+     * people are using are different decisions.
+     */
+    deletePromo: (code: string, revokeGrants = false) =>
+      request<{ grants_revoked: number }>(
+        `/api/admin/promo/${encodeURIComponent(code)}${revokeGrants ? "?grants=revoke" : ""}`,
+        { method: "DELETE", auth: true },
+      ),
+
+    listUsers: (signal?: AbortSignal) =>
+      request<{ users: AdminUser[] }>("/api/admin/users", { auth: true, signal }).then(
+        (r) => r.users,
+      ),
+
+    setUserPlan: (userId: number, plan: string) =>
+      request<AdminUser>(`/api/admin/users/${userId}`, {
+        method: "PATCH",
+        auth: true,
+        body: { plan },
+      }),
+  },
 
   /** The candidate's side of a shareable link. No account, no session token. */
   joinRoom: (roomId: string, inviteToken: string, signal?: AbortSignal) =>

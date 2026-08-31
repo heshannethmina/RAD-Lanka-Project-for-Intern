@@ -127,6 +127,9 @@ Backend env: `ADDR` (`:8080`), `JUDGE0_URL` (`http://localhost:2358`),
 `CORS_ORIGIN` (`*`) — a comma-separated allowlist that gates **both** the REST
 CORS headers and WebSocket `CheckOrigin`. `*` is local development only.
 
+`OWNER_EMAILS` is the operator's own accounts, comma-separated — see
+"Owners and the admin UI". Unset means nobody is an admin.
+
 `PORT` overrides `ADDR` when set, because Render and every other PaaS picks the
 port itself and routes to it — a service listening anywhere else looks dead to
 their health check.
@@ -172,6 +175,10 @@ a hosted instance runs something newer.
 | `POST /api/rooms/{id}/invite` | bearer | rotate the link, revoking the old |
 | `GET /api/rooms/{id}/join?token=` | invite | candidate's link check |
 | `POST /api/promo/redeem` | bearer | claim a promotion code |
+| `GET/POST /api/admin/promo` | owner | list or issue codes |
+| `DELETE /api/admin/promo/{code}` | owner | revoke a code |
+| `GET /api/admin/users` | owner | list accounts and usage |
+| `PATCH /api/admin/users/{id}` | owner | change a subscription |
 | `POST /api/run` | — | `{"language","source"}` → Judge0 |
 | `GET /ws/{roomID}?token=` | session **or** invite | the editor socket |
 
@@ -739,9 +746,25 @@ than moving the deadline.
 **The deadline reaches the hub through the `Grant`** an authorizer returns.
 The authorizer is already looking the room up, so asking separately would be a
 second query per join and the two answers could disagree. The first client
-through sets it; `SetDeadline` ignores later ones, or a second joiner could
-extend an interview by reporting a deadline further out. Pinned by
+through sets it; later ones are ignored, or a second joiner could extend an
+interview by reporting a deadline further out. Pinned by
 `TestLaterJoinCannotExtendTheDeadline`.
+
+**The deadline rides on the `Client`, not on a channel of its own.** It used to
+go in as a separate `SetDeadline` message, and that was a race: two sends into
+the same `select` have no defined order, so the hub could register the client
+and build its snapshot *before* reading the deadline. The first joiner then got
+a room with no countdown, and somebody reopening a finished interview was told
+it was still running. `applyDeadline` now runs inside the register case —
+before the client is added to the set, so an interview that is already over is
+reported by that client's own snapshot rather than by an `ended` frame arriving
+ahead of it.
+
+CI is what found this. It failed one push and passed the pull request on the
+**same commit**, which is the signature of a race rather than a break; the
+local repro is `GOMAXPROCS=2 go test -race -count=30 ./internal/ws/`. Two
+sends that must be ordered are a bug even when they are ordered in the source,
+so if a third thing ever needs to arrive with a join, put it on the client too.
 
 **On expiry the room goes read-only, and nobody is disconnected.** Cutting the
 sockets would leave both people staring at a reconnect spinner with no idea
@@ -762,6 +785,72 @@ Two things about the numbers:
 
 `plan.ByName` falls back to Free for anything it does not recognise, so a row
 written by a newer build fails closed.
+
+### Owners and the admin UI
+
+**`OWNER_EMAILS` is a comma-separated list of the operator's own addresses.**
+Those accounts resolve to `plan.Unlimited` and reach the admin routes.
+
+It lives in the environment rather than in an `is_admin` column, and that is
+the whole point. **A column can only be set by somebody who can already write
+to the database** — and on a managed host with no shell and no SQL console,
+that is a cycle with no way in. Render grants neither on the free tier, so an
+environment variable is the only bootstrap available. It also survives the
+database: the free Postgres expires on a timer and takes every row with it, and
+an owner defined in the environment is still an owner afterwards.
+
+Empty means **nobody**, so a deployment that forgets the variable has no
+privileged account rather than an accidental one. Matching is case-insensitive,
+because `users` enforces uniqueness on `lower(email)` and the two must agree.
+
+`api.effectivePlan` now reads three sources, most specific first:
+
+```
+owner list  ->  live promotion  ->  users.plan
+```
+
+The owner winning outright matters at exactly one moment: an owner whose promo
+grant lapsed must not fall back to Free, because that is precisely when they
+need to get in and fix something. Pinned by
+`TestOwnerOutranksALapsedPromotion`.
+
+`isAdmin` is separate from the plan and only reads the owner list. **An
+unlimited *plan* must never imply administrative access** — a comped customer
+is on the same tier as the operator and must not be able to see other people's
+accounts. `TestUnlimitedPlanDoesNotImplyAdmin` exists to stop that being
+"simplified" into one check.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/admin/promo` | codes with who claimed each |
+| `POST /api/admin/promo` | issue one |
+| `DELETE /api/admin/promo/{code}` | revoke; `?grants=revoke` also strips grants |
+| `GET /api/admin/users` | accounts, effective tier, rooms, minutes |
+| `PATCH /api/admin/users/{id}` | change a subscription |
+
+`RequireAdmin` mounts **inside** `RequireAuth` — that is what puts the user in
+the context for it to read — and answers **404, not 403**, matching the room
+routes. A 403 confirms the endpoint is real and that somebody gets through it.
+
+Three things worth keeping:
+
+- **Deleting a code leaves its grants alone by default.** Stopping new claims
+  and taking back access somebody is relying on are different decisions;
+  `?grants=revoke` is opt-in and the UI asks as a second, separate question.
+- **`PATCH` had to be added to the CORS allowlist.** The same omission bit
+  `PUT` when the prompt route landed — a method missing there fails every
+  preflight and looks like a broken endpoint rather than a config line.
+- **`SetUserPlan` writes `users.plan` only.** An account with a live promotion
+  keeps being served by it, so the admin UI shows subscription and effective
+  tier side by side; otherwise an operator changes the subscription, sees no
+  effect, and changes it again.
+
+The web side is `/admin` (`components/Admin.tsx`), linked from the dashboard
+header only when `is_admin` is set. That flag rides on `/api/me` and is a
+**rendering hint** — the server is the boundary.
+
+Still done with SQL, because there is no UI for it: making somebody else an
+admin (add them to `OWNER_EMAILS` and redeploy).
 
 ### Promotion codes
 
@@ -866,19 +955,92 @@ company entity and tax setup, and is well beyond a pilot.
 - Language selection is per-client, not synced, so two people in one room can
   submit the same source under different languages. The room now *has* a
   language column, so the fix is to make the client honour it.
-- No rate limiting on login. bcrypt makes it slow, not impossible. Promo
-  redemption *is* limited, but only per account and only in memory.
-- Promotion codes are issued and revoked with SQL. There is no admin UI,
-  and no way to list who redeemed what without a query.
+- Rate limiting is entirely in memory, so it resets on restart and does not
+  add up across instances. Login (10 per 5 min) and register (5 per 10 min)
+  are limited by IP; promo redemption is per account. That is enough for a
+  single instance — a second one would need Redis, which is already in the
+  design for WS fan-out.
+- Making somebody an admin still means editing `OWNER_EMAILS` and
+  redeploying. There is no way to grant it from the UI, deliberately — the
+  environment is what makes the bootstrap work at all.
 - Expired sessions are swept only by an explicit `DeleteExpiredSessions` call,
   which nothing schedules yet. Harmless — the expiry is enforced in the query,
   so a stale row is unusable, not dangerous.
+
+### Continuous integration
+
+`.github/workflows/ci.yml`, on every pull request and on pushes to `main`.
+Deliberately *not* every push to every branch — a branch with an open pull
+request built twice for one result, reported side by side as "CI / Go (push)"
+and "CI / Go (pull_request)". `main` still builds on push because the merge
+commit is what deploys and no pull request tested that commit as such.
+Three parallel jobs: **Go** (gofmt gate, vet, build, `go test -race ./...`),
+**Next.js** (`npm ci`, `tsc --noEmit`, eslint, `next build`), and
+**govulncheck**.
+
+Two things it does that a local run cannot, and they are the reason it exists:
+
+- **`-race` is simply the default.** The detector needs CGO and a gcc; on this
+  machine that means the mingw dance under "Toolchain setup" below, so in
+  practice it was run when somebody remembered. A Linux runner has a toolchain,
+  so every push now gets it.
+- **The store tests never skip.** A Postgres service container supplies
+  `TEST_DATABASE_URL`, and because the container is new for every run, the
+  migrations are applied **from an empty schema every time**. Locally they only
+  ever run against a database that already has them — so a migration that is
+  broken from zero is invisible until a deploy. This is the check that catches
+  it.
+
+Details worth not undoing:
+
+- **govulncheck is a separate job, not a step in the Go one.** A newly
+  disclosed CVE in a dependency would otherwise fail the job before the tests
+  ran, hiding a real regression behind news about somebody else's code. They
+  are read differently and should fail separately.
+- **The gofmt step turns a file list into an exit code by hand.** `gofmt -l`
+  exits 0 whether or not it found anything, so `run: gofmt -l ./...` would
+  pass forever while printing the problem.
+- **Postgres is on 5432 in CI, 5433 locally.** The local mapping avoids
+  clashing with a developer's own Postgres; a runner has none to clash with.
+- **`npm ci`, not `npm install`** — it fails when `package.json` and the
+  lockfile disagree, which is what makes the run reproducible.
+
+Dependabot (`.github/dependabot.yml`) opens grouped weekly pull requests for
+gomod, npm and github-actions. Grouped because ungrouped daily updates produce
+a stream nobody reads, which is worse than no automation.
+
+**CI does not gate deployment.** Render and Vercel build from the push itself,
+so a red run still ships. Render's service settings can be told to wait for
+checks; that is a dashboard toggle, not something in this repo.
 
 ### Testing note
 
 `go test ./...` covers snapshot-on-join, author exclusion, presence, room
 isolation, room lifecycle, edit serialisation under concurrent writers, and
 slow-client eviction.
+
+**Never write to one socket and then immediately dial another.** There is no
+ordering between two independent connections: the frames are still in flight
+while the new connection does its handshake, so the hub can build the joiner's
+snapshot before it has read anything the first client sent. That is not a bug
+in the hub — imposing an order across connections would mean blocking joins
+behind other people's traffic — but eight tests were written as if it were.
+
+They failed roughly one CI run in three, on a *different* test each time,
+which is what made it look like several unrelated problems. Every one of them
+now puts a **witness** in the room first: the hub mutates its state and only
+then relays, so a witness that has *received* the relay proves the state is
+applied, and the hub being a single goroutine means any join it handles
+afterwards must see it.
+
+Four of the eight failed outright. The other four asserted an *absence* —
+"a candidate joining gets no event log" — and so passed for the wrong reason
+whenever the race went the other way, which is worse: they would have kept
+passing if the code had started leaking the log. Both kinds are fixed.
+
+Reproduce with `GOMAXPROCS=2 go test -race -count=80 ./internal/ws/`. A
+developer machine with idle cores never loses these races; a shared CI runner
+with three jobs on it does.
 
 Two tests (`TestConcurrentEditsSerialise`, `TestSlowClientIsDropped`) drive the
 hub's channels directly instead of going through sockets, and that is

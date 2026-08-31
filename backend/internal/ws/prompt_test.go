@@ -57,10 +57,25 @@ func TestPromptIsInTheSnapshotForLateJoiners(t *testing.T) {
 	next(t, owner, TypeSnapshot)
 	waitPresence(t, owner, 1)
 
+	// A witness already in the room, to order the send against the join.
+	//
+	// Writing to one socket and immediately dialling another guarantees
+	// nothing: the frames are still in flight while the new connection does
+	// its handshake, so the hub can build the joiner's snapshot first. There
+	// is no ordering between two independent connections, and the hub is
+	// right not to invent one. The hub mutates its state and only then
+	// relays, so a witness that has *received* the relay proves the state is
+	// already applied — and the hub is one goroutine, so any join it handles
+	// afterwards must see it.
+	witness := dial(t, room)
+	next(t, witness, TypeSnapshot)
+	waitPresence(t, witness, 2)
+
 	send(t, owner, Message{Type: TypePrompt, Prompt: "Largest value in a list."})
-	// Round-trip an edit so the prompt is certain to have been applied before
-	// the next client joins.
 	send(t, owner, Message{Type: TypeEdit, Text: "x = 1"})
+
+	next(t, witness, TypePrompt)
+	next(t, witness, TypeEdit)
 
 	joiner := dial(t, room)
 	snap := next(t, joiner, TypeSnapshot)

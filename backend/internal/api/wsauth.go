@@ -50,7 +50,7 @@ func RoomAuthorizer(s *store.Store) ws.Authorizer {
 			// The clock is not started for them: an interviewer opening the
 			// room early to set the question should not burn the candidate's
 			// time. It starts when the candidate arrives.
-			return ws.Grant{Role: ws.RoleInterviewer, EndsAt: room.EndsAt()}, nil
+			return ws.Grant{Role: ws.RoleInterviewer, EndsAt: room.EndsAt(), CanRun: room.Open()}, nil
 
 		case errors.Is(err, store.ErrNotFound):
 			// Not a session token; fall through and try it as an invite.
@@ -70,20 +70,21 @@ func RoomAuthorizer(s *store.Store) ws.Authorizer {
 			return ws.Grant{}, fmt.Errorf("authorize: invite lookup: %w", err)
 		}
 
-		// The candidate arriving is what starts the interview. Stamped here
-		// rather than at creation so a room booked on Monday and held on
-		// Friday gets its full time, and an interviewer setting up early does
-		// not eat into it.
-		started, err := s.StartRoom(ctx, roomID)
-		if err != nil {
-			return ws.Grant{}, fmt.Errorf("authorize: start room: %w", err)
-		}
-		_ = room
-
-		// A candidate cannot rejoin an interview whose time has run out.
-		if started.Expired() {
+		if room.Expired() {
 			return ws.Grant{}, ws.ErrUnauthorized
 		}
-		return ws.Grant{Role: ws.RoleCandidate, EndsAt: started.EndsAt()}, nil
+		grant := ws.Grant{Role: ws.RoleCandidate, EndsAt: room.EndsAt(), CanRun: true}
+		grant.OnAccepted = func(accepted context.Context) error {
+			started, err := s.StartRoom(accepted, roomID)
+			if err != nil {
+				return err
+			}
+			if started.Expired() {
+				return ws.ErrUnauthorized
+			}
+			grant.EndsAt = started.EndsAt()
+			return nil
+		}
+		return grant, nil
 	}
 }

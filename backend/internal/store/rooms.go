@@ -106,6 +106,44 @@ func (s *Store) CreateRoom(ctx context.Context, in NewRoom) (*Room, error) {
 	return &r, nil
 }
 
+// CreateRoomWithinPlan performs the quota check and insert in one transaction,
+// serialised on the owner's row so concurrent requests cannot both pass the
+// count-then-insert window.
+func (s *Store) CreateRoomWithinPlan(ctx context.Context, in NewRoom, max int, lifetime bool) (*Room, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("store: begin room quota: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var used int
+	query := `SELECT count(*) FROM rooms WHERE owner_id = $1`
+	if !lifetime {
+		query += ` AND created_at >= date_trunc('month', now())`
+	}
+	if err := tx.QueryRow(ctx, `SELECT id FROM users WHERE id = $1 FOR UPDATE`, in.OwnerID).Scan(new(int64)); err != nil {
+		return nil, fmt.Errorf("store: lock owner: %w", err)
+	}
+	if err := tx.QueryRow(ctx, query, in.OwnerID).Scan(&used); err != nil {
+		return nil, fmt.Errorf("store: count rooms: %w", err)
+	}
+	if used >= max {
+		return nil, ErrQuotaExceeded
+	}
+	var r Room
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO rooms (id, owner_id, title, language, prompt, scheduled_at, duration_minutes, invite_token_hash)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		RETURNING id, owner_id, title, language, prompt, scheduled_at, duration_minutes, started_at, created_at, closed_at
+	`, in.ID, in.OwnerID, in.Title, in.Language, in.Prompt, in.ScheduledAt, int(in.Duration/time.Minute), in.InviteTokenHash).Scan(scanRoom(&r)...); err != nil {
+		return nil, fmt.Errorf("store: create room: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("store: commit room: %w", err)
+	}
+	r.hydrate()
+	return &r, nil
+}
+
 // StartRoom stamps the moment the interview actually began, the first time
 // anybody joins, and returns the room either way.
 //
@@ -199,6 +237,7 @@ func (s *Store) RoomByInvite(ctx context.Context, id string, inviteTokenHash []b
 		SELECT id, owner_id, title, language, prompt, scheduled_at, duration_minutes, started_at, created_at, closed_at
 		FROM rooms
 		WHERE id = $1 AND invite_token_hash = $2 AND closed_at IS NULL
+		  AND (started_at IS NULL OR started_at + (duration_minutes * interval '1 minute') > now())
 	`, id, inviteTokenHash).
 		Scan(scanRoom(&r)...)
 

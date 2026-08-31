@@ -35,6 +35,11 @@ export default function RoomGate({ roomId }: { roomId: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
+		if (invite && typeof window !== "undefined") {
+			const clean = new URL(window.location.href);
+			clean.searchParams.delete("t");
+			window.history.replaceState({}, "", clean.toString());
+		}
 
     async function resolve() {
       // Candidate first: an invite link should work even for someone who
