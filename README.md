@@ -1,5 +1,7 @@
 # SyncR
 
+[![CI](https://github.com/heshannethmina/RAD-Lanka-Project-for-Intern/actions/workflows/ci.yml/badge.svg)](https://github.com/heshannethmina/RAD-Lanka-Project-for-Intern/actions/workflows/ci.yml)
+
 A collaborative code editor for technical interviews. An interviewer creates a
 room and sends a link; the candidate opens it and starts typing. Both sides see
 the same document live, and code runs for real in a sandbox.
@@ -123,6 +125,36 @@ To take those back as well:
 UPDATE users SET promo_plan = NULL, promo_expires_at = NULL
 WHERE promo_code = 'SYNCR-PILOT';
 ```
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and on pull requests to `main`.
+Three jobs, in parallel:
+
+| Job | Runs |
+|---|---|
+| **Go** | `gofmt` check, `go vet`, `go build`, `go test -race ./...` |
+| **Next.js** | `npm ci`, `tsc --noEmit`, `eslint`, `next build` |
+| **govulncheck** | reachable vulnerabilities in Go dependencies |
+
+Two of these are stronger in CI than they can be locally:
+
+- **`-race` always runs.** It needs CGO and a gcc, which on Windows means
+  installing mingw-w64 by hand and exporting `PATH` first — so locally it gets
+  run occasionally. A Linux runner has a toolchain already.
+- **The store tests never skip.** They need a real Postgres and skip without
+  `TEST_DATABASE_URL`; CI provides one as a service container. Because that
+  container is new every run, **the migrations are applied to an empty schema
+  every time**, which is the one thing a local run never checks.
+
+Dependabot (`.github/dependabot.yml`) opens grouped weekly update pull
+requests for Go, npm and the actions themselves, so every upgrade goes through
+the suite above before anyone looks at it.
+
+Nothing here gates deployment. Render and Vercel both build straight from a
+push, so a red CI run still ships. Render's service settings have an option to
+wait for checks before deploying; turning it on is the one manual step that
+closes that gap.
 
 ## Deploying
 

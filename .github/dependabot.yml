@@ -1,0 +1,45 @@
+# Automated dependency updates.
+#
+# Grouped and weekly on purpose. Ungrouped daily updates produce a stream of
+# single-package pull requests that nobody reads, which is worse than no
+# automation at all — the point is that an update is noticed, and a wall of
+# noise is how updates stop being noticed.
+#
+# Every one of these opens a pull request, so CI runs the full suite against
+# the new versions before a human looks at it.
+
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Next, React and their types move together; splitting them produces
+      # pull requests that cannot pass on their own.
+      next-and-react:
+        patterns: ["next", "react", "react-dom", "@types/react*", "eslint-config-next"]
+      everything-else:
+        patterns: ["*"]
+        exclude-patterns: ["next", "react", "react-dom", "@types/react*", "eslint-config-next"]
+
+  # The workflow's own actions pin to major versions, which still drift. This
+  # is what keeps checkout/setup-go/setup-node current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

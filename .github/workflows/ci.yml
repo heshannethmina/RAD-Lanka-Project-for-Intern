@@ -1,0 +1,156 @@
+# Continuous integration.
+#
+# This runs the checks that were previously only ever run by hand, and it runs
+# two of them *better* than a Windows laptop can:
+#
+#   * The race detector needs CGO and a gcc. On Windows that meant installing
+#     mingw-w64 by hand and exporting PATH before every run, so in practice it
+#     was run rarely. A Linux runner has a working toolchain already, so -race
+#     is simply the default here.
+#   * The store tests skip themselves without TEST_DATABASE_URL. A Postgres
+#     service container means they never skip in CI, and because the container
+#     is new for every run, the migrations are exercised from an empty schema
+#     every single time — which is the one thing local runs never test.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch makes the first run irrelevant. Cancelling
+# it keeps the queue short and the feedback fast.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only by default. Nothing here writes to the repository, and a token
+# that cannot write cannot be turned against it.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Go
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: syncr
+          POSTGRES_USER: syncr
+          # Throwaway, for a container that exists for the length of one job
+          # and is never reachable from outside the runner.
+          POSTGRES_PASSWORD: syncrdev
+        ports:
+          # 5432 here, not the 5433 used locally. The local mapping avoids a
+          # clash with a developer's own Postgres; a runner has none.
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U syncr -d syncr"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      TEST_DATABASE_URL: postgres://syncr:syncrdev@localhost:5432/syncr
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Read from go.mod so the toolchain cannot drift from what the
+          # module declares. Paths in `with:` are relative to the repository
+          # root — `defaults.working-directory` only applies to `run` steps.
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: gofmt
+        # gofmt exits 0 whether or not it finds anything, so the file list is
+        # the signal and has to be turned into an exit code by hand.
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test -race
+        # -race is the whole point of running this on Linux. The hub, the
+        # registry and the client are the concurrent parts of this codebase
+        # and the detector is the only thing that checks them.
+        run: go test -race ./...
+
+  web:
+    name: Next.js
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # ci, not install: it installs exactly what the lockfile says and fails
+      # if package.json and the lockfile disagree, which is what makes a CI
+      # run reproducible.
+      - name: npm ci
+        run: npm ci
+
+      - name: tsc
+        # next build type-checks too, but this fails in seconds rather than
+        # after a full production build.
+        run: npx tsc --noEmit
+
+      - name: eslint
+        run: npm run lint
+
+      - name: next build
+        run: npm run build
+
+  vulns:
+    name: govulncheck
+    runs-on: ubuntu-latest
+
+    # Its own job rather than a step in `backend`, so a newly disclosed CVE in
+    # a dependency does not hide a real test failure behind it. Both show up,
+    # and they are read differently: a test failure is something this commit
+    # broke, a vulnerability report usually is not.
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: govulncheck
+        # Reports only vulnerabilities that are actually reachable from this
+        # code, rather than every advisory touching the dependency tree.
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...

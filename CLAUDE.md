@@ -948,6 +948,48 @@ company entity and tax setup, and is well beyond a pilot.
   which nothing schedules yet. Harmless — the expiry is enforced in the query,
   so a stale row is unusable, not dangerous.
 
+### Continuous integration
+
+`.github/workflows/ci.yml`, on every push and on pull requests to `main`.
+Three parallel jobs: **Go** (gofmt gate, vet, build, `go test -race ./...`),
+**Next.js** (`npm ci`, `tsc --noEmit`, eslint, `next build`), and
+**govulncheck**.
+
+Two things it does that a local run cannot, and they are the reason it exists:
+
+- **`-race` is simply the default.** The detector needs CGO and a gcc; on this
+  machine that means the mingw dance under "Toolchain setup" below, so in
+  practice it was run when somebody remembered. A Linux runner has a toolchain,
+  so every push now gets it.
+- **The store tests never skip.** A Postgres service container supplies
+  `TEST_DATABASE_URL`, and because the container is new for every run, the
+  migrations are applied **from an empty schema every time**. Locally they only
+  ever run against a database that already has them — so a migration that is
+  broken from zero is invisible until a deploy. This is the check that catches
+  it.
+
+Details worth not undoing:
+
+- **govulncheck is a separate job, not a step in the Go one.** A newly
+  disclosed CVE in a dependency would otherwise fail the job before the tests
+  ran, hiding a real regression behind news about somebody else's code. They
+  are read differently and should fail separately.
+- **The gofmt step turns a file list into an exit code by hand.** `gofmt -l`
+  exits 0 whether or not it found anything, so `run: gofmt -l ./...` would
+  pass forever while printing the problem.
+- **Postgres is on 5432 in CI, 5433 locally.** The local mapping avoids
+  clashing with a developer's own Postgres; a runner has none to clash with.
+- **`npm ci`, not `npm install`** — it fails when `package.json` and the
+  lockfile disagree, which is what makes the run reproducible.
+
+Dependabot (`.github/dependabot.yml`) opens grouped weekly pull requests for
+gomod, npm and github-actions. Grouped because ungrouped daily updates produce
+a stream nobody reads, which is worse than no automation.
+
+**CI does not gate deployment.** Render and Vercel build from the push itself,
+so a red run still ships. Render's service settings can be told to wait for
+checks; that is a dashboard toggle, not something in this repo.
+
 ### Testing note
 
 `go test ./...` covers snapshot-on-join, author exclusion, presence, room
