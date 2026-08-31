@@ -23,9 +23,66 @@ import { api, ApiError, getToken, type Room } from "@/lib/api";
  * hammer away at a room the viewer will never be admitted to. The server still
  * authorises the socket itself; this is about being able to say why.
  */
+/**
+ * Where a candidate's invite lives once it has been taken out of the URL.
+ *
+ * Per tab and per room: sessionStorage dies with the tab, which is the right
+ * lifetime for a link that admits someone to one interview, and keying by room
+ * stops two rooms open in the same tab from overwriting each other.
+ */
+function inviteKey(roomId: string): string {
+  return `syncr.invite.${roomId}`;
+}
+
+/**
+ * Reads the invite once, from the URL if it is there and from this tab's store
+ * if it is not, and remembers it either way.
+ *
+ * The remembering is what makes a reload work. The token is deliberately
+ * stripped from the address bar below — it should not sit in a screenshot, a
+ * screen share or browser history — but that also means the URL cannot be the
+ * only copy, or pressing F5 mid-interview locks the candidate out of their own
+ * interview.
+ */
+function readInvite(roomId: string, fromURL: string | null): string | null {
+  if (typeof window === "undefined") return fromURL;
+  if (fromURL) {
+    try {
+      window.sessionStorage.setItem(inviteKey(roomId), fromURL);
+    } catch {
+      // Private mode and "block site data" throw rather than return null.
+      // Losing the copy only costs a reload, so carry on with the URL value.
+    }
+    return fromURL;
+  }
+  try {
+    return window.sessionStorage.getItem(inviteKey(roomId));
+  } catch {
+    return null;
+  }
+}
+
+function forgetInvite(roomId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(inviteKey(roomId));
+  } catch {
+    // Nothing to do; a stale entry only ever produces the same refusal again.
+  }
+}
+
 export default function RoomGate({ roomId }: { roomId: string }) {
   const params = useSearchParams();
-  const invite = params.get("t");
+
+  // Latched, not read live from the router on every render.
+  //
+  // Stripping ?t= from the address bar calls history.replaceState, and Next
+  // feeds that straight back into useSearchParams. Read live, this value went
+  // null the instant the URL was cleaned: the effect re-ran, its cleanup
+  // aborted the join request already in flight, and the second pass fell
+  // through to the interviewer branch — telling a candidate holding a
+  // perfectly good link to sign in. Reading it once breaks that loop.
+  const [invite] = useState(() => readInvite(roomId, params.get("t")));
 
   const [state, setState] = useState<
     | { status: "checking" }
@@ -35,11 +92,15 @@ export default function RoomGate({ roomId }: { roomId: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
-		if (invite && typeof window !== "undefined") {
-			const clean = new URL(window.location.href);
-			clean.searchParams.delete("t");
-			window.history.replaceState({}, "", clean.toString());
-		}
+
+    // Take the token out of the address bar now that it is safely latched
+    // above, so it does not end up in a screenshot, a screen share or the
+    // browser history.
+    if (typeof window !== "undefined" && params.get("t")) {
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("t");
+      window.history.replaceState({}, "", clean.toString());
+    }
 
     async function resolve() {
       // Candidate first: an invite link should work even for someone who
@@ -51,6 +112,10 @@ export default function RoomGate({ roomId }: { roomId: string }) {
           setState({ status: "ready", token: invite, room });
         } catch (cause) {
           if (cause instanceof DOMException && cause.name === "AbortError") return;
+          // A link that has been rotated or revoked is never coming back, so
+          // drop the remembered copy rather than replaying the same refusal on
+          // every reload for the rest of the tab's life.
+          if (cause instanceof ApiError) forgetInvite(roomId);
           setState({
             status: "denied",
             message:
@@ -97,7 +162,7 @@ export default function RoomGate({ roomId }: { roomId: string }) {
 
     void resolve();
     return () => controller.abort();
-  }, [roomId, invite]);
+  }, [roomId, invite, params]);
 
   if (state.status === "checking") {
     return (
