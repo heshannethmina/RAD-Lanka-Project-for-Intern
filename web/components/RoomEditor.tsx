@@ -668,6 +668,19 @@ export default function RoomEditor({
                 onMount={handleMount}
                 onChange={handleChange}
                 options={{
+                  // Not optional here. Monaco caches its container's size and
+                  // maps mouse coordinates against that cache, so once the
+                  // container has resized without it being told, clicking puts
+                  // the caret somewhere other than where you clicked — and in
+                  // the region it believes is outside the editor, nothing
+                  // happens at all. It reads exactly like a stuck cursor.
+                  //
+                  // This editor sits inside two draggable SplitPanes and a
+                  // resizable window, so its container changes size constantly.
+                  // automaticLayout installs a ResizeObserver and re-lays out
+                  // on its own; it is not the old polling loop that guides
+                  // still warn about.
+                  automaticLayout: true,
                   fontFamily: "var(--font-mono)",
                   fontSize: 13.5,
                   minimap: { enabled: true, size: "fit", showSlider: "always" },

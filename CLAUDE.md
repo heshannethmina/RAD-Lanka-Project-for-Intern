@@ -396,6 +396,16 @@ phone and city. **Replace them before the site goes anywhere public.** They
 are grouped in one named constant rather than scattered through the markup
 precisely so they are hard to miss.
 
+**Monaco needs `automaticLayout: true`, and it is not optional here.** It
+caches its container's size and maps mouse coordinates against that cache, so
+once the container has resized without it being told, clicks put the caret
+somewhere other than where you clicked — and in the region it believes is
+outside the editor, nothing happens at all. It reads exactly like a stuck
+cursor, which is how it was reported. The editor sits inside two draggable
+`SplitPane`s and a resizable window, so its container changes size constantly.
+`automaticLayout` installs a `ResizeObserver`; it is not the old polling loop
+that guides still warn about.
+
 Monaco runs a `syncr-light` theme registered in `beforeMount`, using the
 same GitHub-light token palette as the marketing editor mockup so the
 product and the page advertising it agree.
@@ -523,6 +533,24 @@ the viewer will never enter, and the UI could never say why. The server still
 authorises the socket itself; the REST check is about being able to explain the
 refusal. `useRoomSocket` therefore takes a token and stays shut while it is
 null.
+
+**The invite is read once, not live from the router.** The gate strips `?t=`
+out of the address bar as soon as it has it, so a live invite token does not
+sit in a screenshot, a screen share or browser history. But Next feeds
+`history.replaceState` straight back into `useSearchParams`, so reading the
+token live meant it went **null the instant the URL was cleaned** — the effect
+re-ran, its cleanup aborted the join request already in flight, and the second
+pass fell through to the interviewer branch. A candidate holding a perfectly
+good link was told to sign in. The token is now latched into state on first
+render, which breaks that loop.
+
+It is also kept in `sessionStorage`, keyed by room. Once the URL has been
+cleaned it is the only copy, and without it **a reload locked the candidate out
+of their own interview**. Per tab and per room: sessionStorage dies with the
+tab, which is the right lifetime for a link admitting somebody to one
+interview, and the key stops two rooms open in one tab overwriting each other.
+A refusal from the API clears it, so a rotated link stops replaying the same
+error on every reload.
 
 The dashboard holds revealed invite tokens in component state only. A reload
 loses them — the server stores just the hash — which is why a row's action
