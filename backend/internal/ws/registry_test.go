@@ -36,7 +36,12 @@ func TestRoomsAreIsolated(t *testing.T) {
 	bob := dial(t, url("room-b"))
 	next(t, bob, TypeSnapshot)
 
+	// In room-a, so the final assertion below is ordered against the send.
+	aliceWitness := dial(t, url("room-a"))
+	next(t, aliceWitness, TypeSnapshot)
+
 	send(t, alice, Message{Type: TypeEdit, Text: "only for room a"})
+	next(t, aliceWitness, TypeEdit)
 
 	// Bob is in a different room and must never see that edit. He does get
 	// presence frames for his own room, so check the type rather than just
@@ -92,11 +97,15 @@ func TestReopenedRoomStartsEmpty(t *testing.T) {
 
 	first := dial(t, url("ephemeral"))
 	next(t, first, TypeSnapshot)
-	send(t, first, Message{Type: TypeEdit, Text: "written before everyone left"})
-
-	// Make sure the hub applied the edit before we tear the room down.
+	// The witness joins first and then watches the edit come back, which is
+	// what actually proves the hub applied it. Dialling *after* the send and
+	// reading a snapshot proves nothing — the snapshot may well have been
+	// built before the edit was read.
 	witness := dial(t, url("ephemeral"))
 	next(t, witness, TypeSnapshot)
+
+	send(t, first, Message{Type: TypeEdit, Text: "written before everyone left"})
+	next(t, witness, TypeEdit)
 
 	first.Close()
 	witness.Close()

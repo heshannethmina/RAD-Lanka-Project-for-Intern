@@ -1019,6 +1019,29 @@ checks; that is a dashboard toggle, not something in this repo.
 isolation, room lifecycle, edit serialisation under concurrent writers, and
 slow-client eviction.
 
+**Never write to one socket and then immediately dial another.** There is no
+ordering between two independent connections: the frames are still in flight
+while the new connection does its handshake, so the hub can build the joiner's
+snapshot before it has read anything the first client sent. That is not a bug
+in the hub — imposing an order across connections would mean blocking joins
+behind other people's traffic — but eight tests were written as if it were.
+
+They failed roughly one CI run in three, on a *different* test each time,
+which is what made it look like several unrelated problems. Every one of them
+now puts a **witness** in the room first: the hub mutates its state and only
+then relays, so a witness that has *received* the relay proves the state is
+applied, and the hub being a single goroutine means any join it handles
+afterwards must see it.
+
+Four of the eight failed outright. The other four asserted an *absence* —
+"a candidate joining gets no event log" — and so passed for the wrong reason
+whenever the race went the other way, which is worse: they would have kept
+passing if the code had started leaking the log. Both kinds are fixed.
+
+Reproduce with `GOMAXPROCS=2 go test -race -count=80 ./internal/ws/`. A
+developer machine with idle cores never loses these races; a shared CI runner
+with three jobs on it does.
+
 Two tests (`TestConcurrentEditsSerialise`, `TestSlowClientIsDropped`) drive the
 hub's channels directly instead of going through sockets, and that is
 deliberate. Over real connections, enough writers overrun each other's send

@@ -64,7 +64,14 @@ func TestPointerIsNotStored(t *testing.T) {
 	next(t, a, TypeSnapshot)
 	waitPresence(t, a, 1)
 
+	// A witness, so this cannot pass for the wrong reason: an unprocessed
+	// pointer is trivially not in the snapshot.
+	witness := dial(t, room+"?token=interviewer")
+	next(t, witness, TypeSnapshot)
+	waitPresence(t, witness, 2)
+
 	send(t, a, Message{Type: TypePointer, X: 0.5, Y: 0.5})
+	next(t, witness, TypePointer)
 
 	joiner := dial(t, room+"?token=interviewer")
 	snap := next(t, joiner, TypeSnapshot)
