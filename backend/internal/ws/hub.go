@@ -45,7 +45,6 @@ type Hub struct {
 	// read-only: both people can still see it, but nothing more is accepted.
 	ended bool
 
-	deadline chan time.Time
 	// presenceDirty means the client set changed and the room has not been
 	// told yet. Set it instead of broadcasting inline: a drop can happen
 	// deep inside a broadcast's range loop, and re-entering broadcast from
@@ -76,7 +75,6 @@ func NewHub(roomID string, onEnded func(roomID string)) *Hub {
 		onEnded:    onEnded,
 		clients:    make(map[*Client]struct{}),
 		register:   make(chan *Client),
-		deadline:   make(chan time.Time, 1),
 		unregister: make(chan *Client),
 		inbound:    make(chan inbound),
 		quit:       make(chan struct{}),
@@ -97,22 +95,6 @@ func (h *Hub) Register(c *Client) bool {
 	return <-accepted
 }
 
-// SetDeadline tells the hub when the interview must stop.
-//
-// Non-blocking, because it runs on the HTTP handler's goroutine before the
-// client is registered: blocking here would wedge a join behind whatever the
-// hub happens to be doing. A dropped repeat is harmless — every client
-// carries the same deadline, and the hub keeps the first it is given.
-func (h *Hub) SetDeadline(endsAt time.Time) {
-	if endsAt.IsZero() {
-		return
-	}
-	select {
-	case h.deadline <- endsAt:
-	default:
-	}
-}
-
 // Run owns the room. It returns when the registry stops the hub.
 func (h *Hub) Run() {
 	// Armed only once a deadline arrives. Stopped rather than left nil so the
@@ -123,24 +105,33 @@ func (h *Hub) Run() {
 	}
 	defer expiry.Stop()
 
+	// applyDeadline records when the interview must stop.
+	//
+	// It runs inside the register case rather than reading a channel of its
+	// own. Two sends into the same select have no defined order, so a
+	// separate deadline message could be read *after* the join that carried
+	// it — and the snapshot built in between would report no deadline, or
+	// report a finished interview as still running.
+	//
+	// The first deadline wins: a later join must not be able to extend an
+	// interview by reporting one further out.
+	applyDeadline := func(at time.Time) {
+		if at.IsZero() || !h.endsAt.IsZero() {
+			return
+		}
+		h.endsAt = at
+		if remaining := time.Until(at); remaining > 0 {
+			expiry.Reset(remaining)
+		} else {
+			// Already over: somebody reopening a finished interview.
+			h.expire()
+		}
+	}
+
 	for {
 		select {
 		case <-h.quit:
 			return
-
-		case at := <-h.deadline:
-			// First one wins. A later join must not be able to extend an
-			// interview by reporting a deadline further out.
-			if !h.endsAt.IsZero() {
-				continue
-			}
-			h.endsAt = at
-			if remaining := time.Until(at); remaining > 0 {
-				expiry.Reset(remaining)
-			} else {
-				// Already over: somebody reopening a finished interview.
-				h.expire()
-			}
 
 		case <-expiry.C:
 			h.expire()
@@ -155,6 +146,11 @@ func (h *Hub) Run() {
 			if ack, ok := h.registerAcks.LoadAndDelete(c); ok {
 				ack.(chan bool) <- true
 			}
+			// Before the client is in the set, so that an interview which is
+			// already over is reported by this client's own snapshot rather
+			// than by an ended frame arriving ahead of it.
+			applyDeadline(c.endsAt)
+
 			h.clients[c] = struct{}{}
 			// A late joiner needs the current document before anything else,
 			// otherwise it would sit on an empty buffer until someone types.

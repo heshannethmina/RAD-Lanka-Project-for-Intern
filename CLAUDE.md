@@ -746,9 +746,25 @@ than moving the deadline.
 **The deadline reaches the hub through the `Grant`** an authorizer returns.
 The authorizer is already looking the room up, so asking separately would be a
 second query per join and the two answers could disagree. The first client
-through sets it; `SetDeadline` ignores later ones, or a second joiner could
-extend an interview by reporting a deadline further out. Pinned by
+through sets it; later ones are ignored, or a second joiner could extend an
+interview by reporting a deadline further out. Pinned by
 `TestLaterJoinCannotExtendTheDeadline`.
+
+**The deadline rides on the `Client`, not on a channel of its own.** It used to
+go in as a separate `SetDeadline` message, and that was a race: two sends into
+the same `select` have no defined order, so the hub could register the client
+and build its snapshot *before* reading the deadline. The first joiner then got
+a room with no countdown, and somebody reopening a finished interview was told
+it was still running. `applyDeadline` now runs inside the register case —
+before the client is added to the set, so an interview that is already over is
+reported by that client's own snapshot rather than by an `ended` frame arriving
+ahead of it.
+
+CI is what found this. It failed one push and passed the pull request on the
+**same commit**, which is the signature of a race rather than a break; the
+local repro is `GOMAXPROCS=2 go test -race -count=30 ./internal/ws/`. Two
+sends that must be ordered are a bug even when they are ordered in the source,
+so if a third thing ever needs to arrive with a join, put it on the client too.
 
 **On expiry the room goes read-only, and nobody is disconnected.** Cutting the
 sockets would leave both people staring at a reconnect spinner with no idea

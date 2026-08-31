@@ -37,6 +37,10 @@ type Client struct {
 	// role is set once at construction and never written again, so the hub
 	// goroutine may read it without coordination.
 	role Role
+	// endsAt is the deadline this client was granted, read by the hub when it
+	// registers. Same discipline as role: written once at construction, never
+	// again, so the hub goroutine may read it without coordination.
+	endsAt time.Time
 	// send is written to only by the hub goroutine and closed only by the
 	// hub goroutine, so there is no race on close.
 	send           chan []byte
@@ -46,12 +50,13 @@ type Client struct {
 
 // NewClient wraps an upgraded connection. It does not start any goroutines;
 // call Run for that.
-func NewClient(hub *Hub, conn *websocket.Conn, role Role) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, role Role, endsAt time.Time) *Client {
 	return &Client{
-		hub:  hub,
-		conn: conn,
-		role: role,
-		send: make(chan []byte, sendBuffer),
+		hub:    hub,
+		conn:   conn,
+		role:   role,
+		endsAt: endsAt,
+		send:   make(chan []byte, sendBuffer),
 	}
 }
 

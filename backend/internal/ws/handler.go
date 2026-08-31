@@ -180,11 +180,16 @@ func Handler(reg *Registry, authorize Authorizer) http.HandlerFunc {
 		// when the registry decides whether to close the room.
 		defer reg.Leave(roomID)
 
-		// The first client through sets the room's deadline. Later joins carry
-		// the same value and the hub ignores the repeats.
-		hub.SetDeadline(grant.EndsAt)
-
-		c := NewClient(hub, conn, grant.Role)
+		// The deadline rides on the client rather than going in as a separate
+		// message. Two channel sends into the same select have no order — the
+		// hub could register the client and build its snapshot before reading
+		// the deadline, handing the first joiner a room with no countdown, or
+		// telling somebody reopening a finished interview that it is still
+		// running. Carrying it here makes that unrepresentable.
+		//
+		// The first client through still sets the room's deadline; later joins
+		// carry the same value and the hub keeps the first it was given.
+		c := NewClient(hub, conn, grant.Role, grant.EndsAt)
 		if !hub.Register(c) {
 			_ = conn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseTryAgainLater, "room is full"), time.Now().Add(time.Second))
