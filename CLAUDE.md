@@ -396,6 +396,27 @@ phone and city. **Replace them before the site goes anywhere public.** They
 are grouped in one named constant rather than scattered through the markup
 precisely so they are hard to miss.
 
+**The CSP has to allow the CDN for scripts, styles *and* fonts.** Monaco is
+fetched by `@monaco-editor/react` rather than bundled, and Pyodide is fetched
+by `public/python-worker.js`; both come from `cdn.jsdelivr.net`.
+
+`script-src` allowed it and `style-src` did not, so Monaco's JavaScript loaded
+while `editor.main.css` was refused. Monaco then rendered without the rules
+that position its hidden `<textarea>` and map clicks onto text: the textarea
+showed up as a plain resizable form field floating over the code, complete with
+the browser's own resize grip, and the caret stopped following the mouse. It
+was reported as "the cursor is stuck and there are boxes", which is exactly
+what it looked like — nothing in it pointed at a blocked stylesheet.
+
+Two things about that failure are worth remembering. It appears **only in a
+browser**, so `tsc`, `eslint`, `next build` and CI were all green throughout.
+And Monaco ships its icons as `codicon.ttf` from the same path, so `font-src`
+needs the CDN too or the editor silently loses its icons.
+
+The policy in `web/next.config.ts` is now a list of directives with the reason
+written next to it, rather than one long string in which a missing entry is
+invisible.
+
 **Monaco needs `automaticLayout: true`, and it is not optional here.** It
 caches its container's size and maps mouse coordinates against that cache, so
 once the container has resized without it being told, clicks put the caret
