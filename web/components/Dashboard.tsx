@@ -173,6 +173,13 @@ export default function Dashboard() {
             <Logo className="h-[24px] w-auto" priority />
           </Link>
           <div className="flex items-center gap-4">
+            {/* Only shown to an admin, but the server is the boundary: the
+                admin routes answer 404 for anybody else regardless. */}
+            {user.is_admin && (
+              <Link href="/admin" className="nav-link text-sm">
+                Admin
+              </Link>
+            )}
             <span className="hidden text-sm text-ink-muted sm:inline">{user.email}</span>
             <button
               type="button"

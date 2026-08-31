@@ -59,6 +59,12 @@ services:
       # if you want branch deploys to work.
       - key: CORS_ORIGIN
         sync: false
+      # The operator's own accounts, comma-separated. These resolve to the
+      # Unlimited tier and reach the admin routes without anything being
+      # written to the database first — which is the only way in on a host
+      # with no shell and no SQL console.
+      - key: OWNER_EMAILS
+        sync: false
 
 databases:
   - name: syncr-db

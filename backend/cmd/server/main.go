@@ -41,6 +41,13 @@ func main() {
 	// The same value gates WebSocket upgrades, which CORS does not cover.
 	corsOrigin := env("CORS_ORIGIN", "http://localhost:3000")
 	databaseURL := env("DATABASE_URL", "postgres://syncr:syncrdev@localhost:5433/syncr")
+	// The operator's own accounts, by email, comma-separated. Configured here
+	// rather than by a column because an admin flag in the database can only
+	// be set by somebody who can already write to the database — and on a
+	// managed host with no shell and no SQL console, that is a cycle with no
+	// way in. Empty means nobody, so a deployment that forgets this has no
+	// privileged account rather than an accidental one.
+	api.SetOwners(env("OWNER_EMAILS", ""))
 
 	// The application database — users, sessions, rooms. Not Judge0's, which
 	// is reachable from the sandbox and holds only submissions.
@@ -81,7 +88,9 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if _, err := db.DeleteExpiredSessions(cleanupCtx); err != nil { log.Printf("server: session cleanup: %v", err) }
+			if _, err := db.DeleteExpiredSessions(cleanupCtx); err != nil {
+				log.Printf("server: session cleanup: %v", err)
+			}
 			cancel()
 		}
 	}()
@@ -119,6 +128,17 @@ func main() {
 	// Redeeming a promotion needs an account: the grant is applied to a user
 	// row, so there is nowhere to put it before somebody has registered.
 	authed.Handle("POST /api/promo/redeem", api.RedeemPromo(db))
+
+	// Operator routes. RequireAdmin sits inside RequireAuth, which is what
+	// puts the user in the context for it to read, and answers 404 rather
+	// than 403 so the admin API does not exist for anybody else.
+	admin := http.NewServeMux()
+	admin.Handle("GET /api/admin/promo", api.ListPromoCodes(db))
+	admin.Handle("POST /api/admin/promo", api.CreatePromoCode(db))
+	admin.Handle("DELETE /api/admin/promo/{code}", api.DeletePromoCode(db))
+	admin.Handle("GET /api/admin/users", api.ListUsers(db))
+	admin.Handle("PATCH /api/admin/users/{userID}", api.SetUserPlan(db))
+	authed.Handle("/api/admin/", api.RequireAdmin(admin))
 	// ServeMux prefers the more specific pattern, so the public
 	// /api/rooms/{roomID}/join above still wins over this catch-all.
 	apiMux.Handle("/api/me", api.RequireAuth(db, authed))
@@ -127,6 +147,7 @@ func main() {
 	apiMux.Handle("/api/rooms/{roomID}/invite", api.RequireAuth(db, authed))
 	apiMux.Handle("/api/rooms/{roomID}/prompt", api.RequireAuth(db, authed))
 	apiMux.Handle("/api/promo/redeem", api.RequireAuth(db, authed))
+	apiMux.Handle("/api/admin/", api.RequireAuth(db, authed))
 
 	// WebSocket upgrades ignore CORS entirely, so this is the only thing
 	// stopping a hostile page from opening a socket in a victim's browser.

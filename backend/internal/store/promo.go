@@ -233,3 +233,84 @@ func (s *Store) RedeemPromoCode(ctx context.Context, code string, userID int64, 
 	}
 	return &grant, nil
 }
+
+// PromoCodeWithUse is a coupon plus who has taken it, for the admin listing.
+type PromoCodeWithUse struct {
+	PromoCode
+	// Redeemers are the email addresses that claimed it, newest first.
+	Redeemers []string
+}
+
+// PromoCodes lists every coupon, newest first, each with its redeemers.
+//
+// One query rather than a listing plus a lookup per row: the admin page shows
+// both together, and a handful of coupons should not cost a handful of round
+// trips. array_agg with a FILTER keeps codes that nobody has claimed, which an
+// inner join would silently drop — and a code with no takers is exactly the
+// one an operator is looking for when they wonder whether a link went out.
+func (s *Store) PromoCodes(ctx context.Context, limit int) ([]PromoCodeWithUse, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.code, p.plan, p.max_redemptions, p.redemptions,
+		       p.expires_at, COALESCE(p.grant_days, 0), p.note, p.created_at,
+		       COALESCE(
+		           array_agg(u.email ORDER BY r.redeemed_at DESC)
+		               FILTER (WHERE u.email IS NOT NULL),
+		           '{}'
+		       ) AS redeemers
+		FROM promo_codes p
+		LEFT JOIN promo_redemptions r ON r.code = p.code
+		LEFT JOIN users u ON u.id = r.user_id
+		GROUP BY p.code
+		ORDER BY p.created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("store: list promo codes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []PromoCodeWithUse
+	for rows.Next() {
+		var c PromoCodeWithUse
+		dest := append(scanPromo(&c.PromoCode), &c.Redeemers)
+		if err := rows.Scan(dest...); err != nil {
+			return nil, fmt.Errorf("store: scan promo code: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list promo codes: %w", err)
+	}
+	return out, nil
+}
+
+// DeletePromoCode stops a coupon being claimed again.
+//
+// Grants already handed out are deliberately left alone: deleting a leaked
+// coupon should not silently rewrite what people are already using. Taking
+// those back is a separate, deliberate act — see ClearPromoGrants.
+func (s *Store) DeletePromoCode(ctx context.Context, code string) error {
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM promo_codes WHERE code = $1`, NormalizePromoCode(code))
+	if err != nil {
+		return fmt.Errorf("store: delete promo code: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ClearPromoGrants revokes the grants a code handed out, and reports how
+// many. Separate from DeletePromoCode because they are different decisions:
+// one stops new claims, the other takes back access somebody already has.
+func (s *Store) ClearPromoGrants(ctx context.Context, code string) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE users SET promo_code = NULL, promo_plan = NULL, promo_expires_at = NULL
+		WHERE promo_code = $1
+	`, NormalizePromoCode(code))
+	if err != nil {
+		return 0, fmt.Errorf("store: clear promo grants: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}

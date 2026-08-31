@@ -62,14 +62,37 @@ TEST_DATABASE_URL='postgres://syncr:syncrdev@localhost:5433/syncr' \
 CGO_ENABLED=1 go test -race ./...
 ```
 
+## Becoming the admin
+
+Set **`OWNER_EMAILS`** on the backend service to your own address:
+
+```
+OWNER_EMAILS=you@example.com
+```
+
+On Render that is Environment -> Add Environment Variable on the `syncr-api`
+service, then Save (which redeploys). Comma-separate for more than one.
+
+That address then gets unlimited interviews and an **Admin** link in the
+dashboard header, with **nothing written to the database** — which is the
+point. An `is_admin` column could only be set by somebody who can already
+write to the database, and Render grants neither a shell nor a SQL console on
+the free tier. It also survives the free Postgres expiring and taking every
+row with it.
+
+Leave it unset and nobody is an admin, which is the right default.
+
+From `/admin` you can issue and revoke promotion codes, see who claimed each
+one, and change any account's plan — no SQL for any of it.
+
 ## Giving somebody free access
 
 Pilot customers, universities and anyone being shown the product get a
 promotion code instead of a subscription. They register, enter it under
 **Have a promotion code?** on their interviews page, and their limits lift.
 
-There is no admin UI, so issuing one is an INSERT against the application
-database:
+The admin UI at `/admin` is the normal way to issue one. If you would rather
+do it in SQL, or need to before you have set `OWNER_EMAILS`:
 
 ```sql
 -- unlimited interviews and unlimited length, for 25 people, no end date

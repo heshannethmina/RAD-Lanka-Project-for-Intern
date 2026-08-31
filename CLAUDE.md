@@ -127,6 +127,9 @@ Backend env: `ADDR` (`:8080`), `JUDGE0_URL` (`http://localhost:2358`),
 `CORS_ORIGIN` (`*`) — a comma-separated allowlist that gates **both** the REST
 CORS headers and WebSocket `CheckOrigin`. `*` is local development only.
 
+`OWNER_EMAILS` is the operator's own accounts, comma-separated — see
+"Owners and the admin UI". Unset means nobody is an admin.
+
 `PORT` overrides `ADDR` when set, because Render and every other PaaS picks the
 port itself and routes to it — a service listening anywhere else looks dead to
 their health check.
@@ -172,6 +175,10 @@ a hosted instance runs something newer.
 | `POST /api/rooms/{id}/invite` | bearer | rotate the link, revoking the old |
 | `GET /api/rooms/{id}/join?token=` | invite | candidate's link check |
 | `POST /api/promo/redeem` | bearer | claim a promotion code |
+| `GET/POST /api/admin/promo` | owner | list or issue codes |
+| `DELETE /api/admin/promo/{code}` | owner | revoke a code |
+| `GET /api/admin/users` | owner | list accounts and usage |
+| `PATCH /api/admin/users/{id}` | owner | change a subscription |
 | `POST /api/run` | — | `{"language","source"}` → Judge0 |
 | `GET /ws/{roomID}?token=` | session **or** invite | the editor socket |
 
@@ -763,6 +770,72 @@ Two things about the numbers:
 `plan.ByName` falls back to Free for anything it does not recognise, so a row
 written by a newer build fails closed.
 
+### Owners and the admin UI
+
+**`OWNER_EMAILS` is a comma-separated list of the operator's own addresses.**
+Those accounts resolve to `plan.Unlimited` and reach the admin routes.
+
+It lives in the environment rather than in an `is_admin` column, and that is
+the whole point. **A column can only be set by somebody who can already write
+to the database** — and on a managed host with no shell and no SQL console,
+that is a cycle with no way in. Render grants neither on the free tier, so an
+environment variable is the only bootstrap available. It also survives the
+database: the free Postgres expires on a timer and takes every row with it, and
+an owner defined in the environment is still an owner afterwards.
+
+Empty means **nobody**, so a deployment that forgets the variable has no
+privileged account rather than an accidental one. Matching is case-insensitive,
+because `users` enforces uniqueness on `lower(email)` and the two must agree.
+
+`api.effectivePlan` now reads three sources, most specific first:
+
+```
+owner list  ->  live promotion  ->  users.plan
+```
+
+The owner winning outright matters at exactly one moment: an owner whose promo
+grant lapsed must not fall back to Free, because that is precisely when they
+need to get in and fix something. Pinned by
+`TestOwnerOutranksALapsedPromotion`.
+
+`isAdmin` is separate from the plan and only reads the owner list. **An
+unlimited *plan* must never imply administrative access** — a comped customer
+is on the same tier as the operator and must not be able to see other people's
+accounts. `TestUnlimitedPlanDoesNotImplyAdmin` exists to stop that being
+"simplified" into one check.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/admin/promo` | codes with who claimed each |
+| `POST /api/admin/promo` | issue one |
+| `DELETE /api/admin/promo/{code}` | revoke; `?grants=revoke` also strips grants |
+| `GET /api/admin/users` | accounts, effective tier, rooms, minutes |
+| `PATCH /api/admin/users/{id}` | change a subscription |
+
+`RequireAdmin` mounts **inside** `RequireAuth` — that is what puts the user in
+the context for it to read — and answers **404, not 403**, matching the room
+routes. A 403 confirms the endpoint is real and that somebody gets through it.
+
+Three things worth keeping:
+
+- **Deleting a code leaves its grants alone by default.** Stopping new claims
+  and taking back access somebody is relying on are different decisions;
+  `?grants=revoke` is opt-in and the UI asks as a second, separate question.
+- **`PATCH` had to be added to the CORS allowlist.** The same omission bit
+  `PUT` when the prompt route landed — a method missing there fails every
+  preflight and looks like a broken endpoint rather than a config line.
+- **`SetUserPlan` writes `users.plan` only.** An account with a live promotion
+  keeps being served by it, so the admin UI shows subscription and effective
+  tier side by side; otherwise an operator changes the subscription, sees no
+  effect, and changes it again.
+
+The web side is `/admin` (`components/Admin.tsx`), linked from the dashboard
+header only when `is_admin` is set. That flag rides on `/api/me` and is a
+**rendering hint** — the server is the boundary.
+
+Still done with SQL, because there is no UI for it: making somebody else an
+admin (add them to `OWNER_EMAILS` and redeploy).
+
 ### Promotion codes
 
 Some people are given the product: pilot customers, universities, anyone being
@@ -868,8 +941,9 @@ company entity and tax setup, and is well beyond a pilot.
   language column, so the fix is to make the client honour it.
 - No rate limiting on login. bcrypt makes it slow, not impossible. Promo
   redemption *is* limited, but only per account and only in memory.
-- Promotion codes are issued and revoked with SQL. There is no admin UI,
-  and no way to list who redeemed what without a query.
+- Making somebody an admin still means editing `OWNER_EMAILS` and
+  redeploying. There is no way to grant it from the UI, deliberately — the
+  environment is what makes the bootstrap work at all.
 - Expired sessions are swept only by an explicit `DeleteExpiredSessions` call,
   which nothing schedules yet. Harmless — the expiry is enforced in the query,
   so a stale row is unusable, not dangerous.
