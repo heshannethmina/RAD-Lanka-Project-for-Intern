@@ -1,6 +1,6 @@
 # SyncR
 
-[![CI](https://github.com/heshannethmina/RAD-Lanka-Project-for-Intern/actions/workflows/ci.yml/badge.svg)](https://github.com/heshannethmina/RAD-Lanka-Project-for-Intern/actions/workflows/ci.yml)
+[![CI](https://github.com/heshannethmina/SyncR/actions/workflows/ci.yml/badge.svg)](https://github.com/heshannethmina/SyncR/actions/workflows/ci.yml)
 
 A collaborative code editor for technical interviews. An interviewer creates a
 room and sends a link; the candidate opens it and starts typing. Both sides see
