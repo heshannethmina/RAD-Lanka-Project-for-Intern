@@ -142,9 +142,11 @@ works), and check that:
 
 ## Pull requests
 
-**One branch per change, branched from `main`.** Branches are deleted
-automatically when the pull request merges, so do not keep a long-lived personal
-branch and reuse it.
+**One branch per change, branched from `main`.** Merged branches are kept
+rather than deleted, so the history of a change stays reachable after the squash
+commit replaces it — but a branch is still finished once its pull request
+merges. Start a new one for the next piece of work instead of reusing an old
+one: a long-lived branch drifts from `main`, and two people cannot share it.
 
 ```bash
 git switch main && git pull
