@@ -1,0 +1,95 @@
+name: Bug report
+description: Something in SyncR does not work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two questions up front, because they narrow this down faster than
+        anything else: **which side of the room were you on** (interviewer or
+        candidate), and **was anyone else connected** at the time. A lot of what
+        breaks here only breaks with two people in a room.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+      placeholder: |
+        My cursor jumped to the top of the file every time the other person typed.
+        I expected my own cursor to stay where it was.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >
+        Numbered, from a fresh page load. If it needs two browsers, say which
+        one does what: "browser A creates the room, browser B opens the invite".
+      placeholder: |
+        1. Sign in and create a room
+        2. Open the invite link in a second browser
+        3. Type in browser B
+        4. Watch the caret in browser A
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen
+      options:
+        - Interview room / live editing
+        - Running code
+        - Sign in, register or invite links
+        - Dashboard
+        - Admin or promotion codes
+        - Marketing pages
+        - Backend / API only
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Which side were you on
+      options:
+        - Interviewer (signed in, owns the room)
+        - Candidate (joined by invite link)
+        - Both browsers, testing alone
+        - Not applicable
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: Chrome 141 on Windows 11
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console and network errors
+      description: >
+        Anything red from the browser console, and the Go server log lines if
+        you have them. A blocked resource, or a socket closing with 1006, is
+        usually the whole answer.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched the open issues and this is not one of them
+          required: true
+        - label: >
+            This is reproducible, or I have said clearly that it happened once
+            and I could not reproduce it
+          required: true

@@ -1,0 +1,39 @@
+name: Task or tech debt
+description: Work that is not a user-facing bug or feature. Refactors, tests, docs, infrastructure.
+labels: ["tech-debt"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs doing
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it is worth doing now
+      description: >
+        Tech debt is only worth paying down when it is costing something. Say
+        what it costs: a class of bug it keeps allowing, a change it makes
+        expensive, a check it stops us running.
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Where in the codebase
+      description: Paths, and line numbers if you have them.
+      placeholder: |
+        backend/internal/ws/hub.go
+        web/components/RoomEditor.tsx:583
+
+  - type: textarea
+    id: done
+    attributes:
+      label: How we know it is done
+      description: >
+        Ideally a test that fails today. This repository leans on tests that pin
+        a decision in place; TestLaterJoinCannotExtendTheDeadline is the shape
+        to aim for.

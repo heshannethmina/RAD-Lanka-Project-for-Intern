@@ -1,0 +1,67 @@
+name: Feature request
+description: Propose something SyncR should be able to do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SyncR is deliberately small: a shared editor, real execution, and the
+        thinnest thing around them that works. A proposal is far more likely to
+        land if it argues from **an interview that went badly without it** than
+        from a competitor's feature list.
+
+        Already decided against for now, and not for lack of interest:
+        video/audio, session recording and playback, auto-grading, and ATS
+        integrations. To reopen one of those, the case to make is that a real
+        pilot cannot proceed without it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What goes wrong today, and for whom. Concrete beats general: "the
+        candidate pasted a solution and I could not tell how much of it was
+        theirs" is actionable in a way that "better integrity tooling" is not.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would build
+      description: >
+        Roughly how it should work. If it needs a new WebSocket frame, say what
+        the frame carries and whether it is room state: anything the hub has to
+        keep must also appear in a late joiner's snapshot.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who is this for
+      options:
+        - Interviewers
+        - Candidates
+        - Both
+        - Whoever operates the deployment
+        - People contributing to the codebase
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you considered instead
+      description: >
+        Including doing nothing. Knowing what the workaround is says how urgent
+        this is far better than a priority field would.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched the open issues and this is not already proposed
+          required: true

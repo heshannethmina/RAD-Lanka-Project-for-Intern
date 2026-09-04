@@ -1,0 +1,82 @@
+# CodeQL — static analysis for security-relevant bugs.
+#
+# This is the bot that reads the code looking for the classes of mistake that
+# tests do not catch: an unsanitised path joined from user input, a token
+# compared with ==, a query built by concatenation. It reports into the
+# Security tab rather than failing a pull request outright, because a finding
+# here is something to read and judge, not something to block a merge on.
+#
+# Separate from CI on purpose, for the same reason govulncheck is separate:
+# a newly published query firing on old code must not hide a real test
+# regression behind it.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # A weekly run matters more than it looks. CodeQL ships new queries
+  # continuously, so code that was clean in January can have a finding in
+  # March without a single line changing.
+  schedule:
+    - cron: "23 5 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      # Writing the findings into the Security tab is the whole point.
+      security-events: write
+      contents: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Go is compiled, so CodeQL needs a real build to see the code.
+          # autobuild finds backend/go.mod on its own.
+          - language: go
+            build-mode: autobuild
+          # The Next.js app is interpreted; there is nothing to build, and
+          # asking for one only means waiting on a Next compile for no
+          # additional coverage.
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # Pinned to the same version CI uses, so a Go release cannot make the
+      # analysis job disagree with the test job about what compiles.
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # security-extended adds the lower-confidence security queries.
+          # Worth the extra noise on a project that hands a stranger an
+          # editor and runs what they type.
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

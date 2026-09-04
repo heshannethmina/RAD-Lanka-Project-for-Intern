@@ -1,0 +1,65 @@
+# Path-based labels for pull requests, applied by .github/workflows/labeler.yml.
+#
+# These say *where* a change landed, not what it is worth. "This touches the
+# hub" is a fact a glob can establish; "this is a bug" is not, and a bot that
+# guesses at the second kind produces labels nobody trusts.
+
+backend:
+  - changed-files:
+      - any-glob-to-any-file: backend/**
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file: web/**
+
+# The concurrent code. Called out separately from the rest of the backend
+# because a change here is the one that needs -race run against it and a
+# careful read of whether state is still owned by a single goroutine.
+websocket:
+  - changed-files:
+      - any-glob-to-any-file: backend/internal/ws/**
+
+database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - backend/migrations/**
+          - backend/internal/store/**
+
+# Anything that changes how the app is built, run or deployed. A change here
+# can be green in CI and still break production, which is the reason it wants
+# its own label.
+infra:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docker-compose*.yml
+          - render.yaml
+          - judge0.conf
+          - .github/**
+          - web/next.config.ts
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - docs/**
+
+design:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/app/globals.css
+          - web/public/**
+
+testing:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*_test.go"
+          - "**/*.test.ts"
+          - "**/*.test.tsx"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - backend/go.mod
+          - backend/go.sum
+          - web/package.json
+          - web/package-lock.json

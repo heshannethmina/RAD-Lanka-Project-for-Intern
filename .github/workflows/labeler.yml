@@ -1,0 +1,39 @@
+# Labels a pull request by the paths it touches, from .github/labeler.yml.
+#
+# Small, but it is what makes the issue list filterable a year from now: with
+# a label on every pull request, "what has changed in the hub lately" is a
+# query rather than an afternoon of scrolling.
+
+name: Labeler
+
+# pull_request_target, not pull_request, and the distinction matters.
+#
+# A pull request from a fork — which is how any outside contribution arrives —
+# gets a read-only token under `pull_request`, so the labelling silently does
+# nothing. `pull_request_target` runs the workflow from the *base* branch with
+# a writable token.
+#
+# That is normally the dangerous choice, because a workflow running with write
+# access must never check out and execute a fork's code. This one is safe
+# because it never checks anything out: actions/labeler reads the changed-file
+# list from the API and applies labels. Nothing from the fork is executed. If
+# a step is ever added here that runs the contributor's code, this trigger has
+# to change with it.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          # Labels are added, never removed. Someone who labels a pull
+          # request by hand has made a decision, and a bot undoing it on the
+          # next push is how people stop labelling anything.
+          sync-labels: false
