@@ -23,6 +23,10 @@ concurrency:
 
 jobs:
   lint:
+    # Named, because this becomes the check name on a pull request and is
+    # what a branch ruleset has to reference to require it. "lint" alone
+    # says nothing next to the other checks.
+    name: PR title
     runs-on: ubuntu-latest
     steps:
       - uses: amannn/action-semantic-pull-request@v5

@@ -1,0 +1,40 @@
+# Code owners — GitHub requests a review from the owner of every path a pull
+# request touches, automatically.
+#
+# The ruleset on `main` has "require code owner review" turned on, so these
+# lines are not advisory: a pull request cannot merge until the owner of every
+# matched path has approved it.
+#
+# Syntax is gitignore-style, and **the last matching line wins** — which is the
+# opposite of how most config files work and the usual way this file goes
+# wrong. Keep the catch-all first and narrow rules below it.
+
+# Everything, unless something below claims it.
+*                           @heshannethmina
+
+# The concurrent code. Called out separately not because ownership differs
+# today, but because a change here needs the race detector run against it and
+# a read of whether room state is still owned by a single goroutine. When
+# there is a second reviewer, this is the first path to hand over.
+/backend/internal/ws/       @heshannethmina
+
+# Schema changes are one-way in a way code is not: a migration that has run in
+# production cannot be edited, only followed by another one.
+/backend/migrations/        @heshannethmina
+
+# Auth, tokens and the plan/promo logic that decides who gets in and for how
+# long.
+/backend/internal/auth/     @heshannethmina
+/backend/internal/api/      @heshannethmina
+
+# CI, deployment and the repository's own automation. A change here can be
+# green and still break production, and it is the one place a pull request can
+# alter how pull requests are checked.
+/.github/                   @heshannethmina
+/render.yaml                @heshannethmina
+/docker-compose.yml         @heshannethmina
+/docker-compose.app.yml     @heshannethmina
+
+# The design record. Not code, but the reasoning behind most of the decisions
+# in it — worth the same review as the code it explains.
+/CLAUDE.md                  @heshannethmina
