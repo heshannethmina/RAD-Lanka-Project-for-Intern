@@ -28,5 +28,11 @@ Thumbs.db
 .idea/
 *.swp
 
-#Security Test
-SECURITY.MD
+# Security Test — a local penetration-testing brief, not a policy.
+#
+# Anchored with a leading slash so it ignores ONLY the file at the repository
+# root. Without the slash the pattern matches at any depth, and because git is
+# case-insensitive on Windows (core.ignorecase=true) it silently swallowed
+# .github/SECURITY.md — the public security policy — which then could not be
+# committed and gave no error saying why.
+/SECURITY.MD

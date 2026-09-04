@@ -1,0 +1,176 @@
+# Opening triage — puts a new issue into a state a human can sort, without
+# waiting for one to be available.
+#
+# Two jobs, deliberately separate because they answer different questions:
+#
+#   * `needs-triage` marks that nobody has decided how urgent this is. It is
+#     removed automatically the moment a Priority label appears, so the label
+#     means "still unsorted" rather than "was once unsorted".
+#   * The area labels come from the issue form's own dropdown. The reporter
+#     already told us where the problem is; asking a maintainer to re-read the
+#     body and apply the matching label is work a regular expression can do.
+#
+# What this deliberately does NOT do is guess at Type or Priority. A glob can
+# establish which files a change touches and a dropdown can establish what the
+# reporter believes; neither can establish how much a problem matters, and a
+# bot that guesses at that produces labels nobody trusts.
+
+name: Triage
+
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled]
+
+permissions:
+  issues: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  needs-triage:
+    name: Mark or clear needs-triage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+
+            // Pull requests also arrive through the issues API. They are not
+            // triaged this way — the labeler handles them by path.
+            if (issue.pull_request) {
+              core.info('Payload is a pull request; skipping.');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const names = (issue.labels || []).map(
+              (l) => (typeof l === 'string' ? l : l.name || '')
+            );
+
+            const hasPriority = names.some((n) => n.startsWith('Priority/'));
+            const hasNeedsTriage = names.includes('needs-triage');
+
+            // A priority has been set, so the issue is triaged by definition.
+            if (hasPriority && hasNeedsTriage) {
+              core.info('Priority present; removing needs-triage.');
+              await github.rest.issues.removeLabel({
+                owner, repo, issue_number: issue.number, name: 'needs-triage',
+              });
+              return;
+            }
+
+            // No priority and not yet flagged: flag it.
+            if (!hasPriority && !hasNeedsTriage) {
+              core.info('No priority; adding needs-triage.');
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: issue.number, labels: ['needs-triage'],
+              });
+              return;
+            }
+
+            core.info('Nothing to change.');
+
+  # ---------------------------------------------------------------------------
+  area-labels:
+    name: Apply area labels from the form
+    # Only on open and edit. A label change cannot alter the body, so re-running
+    # this on every `labeled` event would re-add a label a maintainer had just
+    # deliberately removed.
+    if: github.event.action == 'opened' || github.event.action == 'edited'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (issue.pull_request) return;
+
+            const body = issue.body || '';
+            if (!body.trim()) {
+              core.info('Empty body — a blank issue, nothing to parse.');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+
+            // An issue form renders each answer as a markdown section:
+            //
+            //   ### Where does it happen
+            //
+            //   Interview room / live editing
+            //
+            // The heading text is the `label:` field from the template, so
+            // these two strings must stay in step with
+            // .github/ISSUE_TEMPLATE/bug_report.yml. If a heading is renamed
+            // there and not here, this quietly stops labelling anything —
+            // which is why the run logs when it finds no section.
+            const HEADINGS = ['Where does it happen', 'Who is this for'];
+
+            function sectionFor(heading) {
+              const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const re = new RegExp(
+                `###\\s*${escaped}\\s*\\n([\\s\\S]*?)(?=\\n###\\s|$)`
+              );
+              const m = body.match(re);
+              return m ? m[1].trim() : '';
+            }
+
+            // The dropdown answers, mapped to the labels this repository
+            // actually uses. Several answers map to more than one label
+            // because a room bug is usually both halves at once.
+            const MAP = {
+              'Interview room / live editing': ['frontend', 'websocket'],
+              'Running code':                  ['frontend', 'backend'],
+              'Sign in, register or invite links': ['backend', 'security'],
+              'Dashboard':                     ['frontend'],
+              'Admin or promotion codes':      ['backend'],
+              'Marketing pages':               ['frontend', 'design'],
+              'Backend / API only':            ['backend'],
+              'Whoever operates the deployment': ['infra'],
+              'People contributing to the codebase': ['tech-debt'],
+              // "Not sure", "Interviewers", "Candidates" and "Both" say
+              // nothing about where the code is, so they map to nothing.
+            };
+
+            const answers = [];
+            for (const heading of HEADINGS) {
+              const section = sectionFor(heading);
+              if (!section) {
+                core.info(`No section found for "${heading}".`);
+                continue;
+              }
+              if (section === '_No response_') continue;
+              // Multi-select dropdowns are comma-separated.
+              for (const part of section.split(',')) {
+                const a = part.trim();
+                if (a) answers.push(a);
+              }
+            }
+
+            const toApply = new Set();
+            for (const a of answers) {
+              for (const label of MAP[a] || []) toApply.add(label);
+            }
+
+            // Skip labels already present, so an edit does not make a
+            // pointless API call.
+            //
+            // Note what this does NOT do: if a maintainer removes an area
+            // label and the reporter later edits the body, it comes back. The
+            // alternative is running on `opened` only, which loses the case
+            // this is mostly for — a reporter fixing a dropdown they got
+            // wrong. Re-adding is the less annoying of the two.
+            const existing = new Set(
+              (issue.labels || []).map((l) => (typeof l === 'string' ? l : l.name))
+            );
+            const labels = [...toApply].filter((l) => !existing.has(l));
+
+            if (labels.length === 0) {
+              core.info('No new area labels to apply.');
+              return;
+            }
+
+            core.info(`Applying: ${labels.join(', ')}`);
+            await github.rest.issues.addLabels({
+              owner, repo, issue_number: issue.number, labels,
+            });
