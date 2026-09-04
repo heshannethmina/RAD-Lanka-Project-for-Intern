@@ -52,7 +52,7 @@ The short version:
 
 1. Search the [issues](https://github.com/heshannethmina/SyncR/issues) first. Anything tagged `good first issue` is genuinely self-contained.
 2. Ask in [Discussions](https://github.com/heshannethmina/SyncR/discussions) rather than filing an issue if you are not yet sure it is one. Anything that changes the WebSocket protocol, the schema or the concurrency design should start as a **design proposal** there.
-3. One branch per change, branched from `main`. Branches are deleted on merge, so do not keep one around.
+3. One branch per change, branched from `main`. Merged branches are kept, but a branch is done once its pull request merges — start a new one rather than reusing it.
 4. Pull request titles are conventional commits (`fix: stop the caret jumping`) — squash merging makes the title the commit message on `main`, and a workflow checks it.
 5. Link the issue with `Closes #123` in the description. Closing keywords only fire at merge time.
 
