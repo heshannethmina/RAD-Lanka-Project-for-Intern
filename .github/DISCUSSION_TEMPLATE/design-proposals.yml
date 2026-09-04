@@ -1,0 +1,121 @@
+labels: ["Proposal/Draft"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For anything that changes the WebSocket protocol, the database schema,
+        the authorization model, or the concurrency design. Writing it down here
+        is much cheaper than discovering in review that the approach was wrong.
+
+        Read the relevant part of
+        [`CLAUDE.md`](https://github.com/heshannethmina/SyncR/blob/main/CLAUDE.md)
+        first. If this proposal reverses a decision recorded there, say so
+        explicitly — several of those choices look like accidents and are not,
+        and a proposal that argues against one on its merits is welcome.
+
+        Label it `Proposal/Review` when it is ready for feedback.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: >
+        What goes wrong today, for whom, and what it costs. Concrete beats
+        general — an interview that went badly is a better argument than a
+        category of concern.
+    validations:
+      required: true
+
+  - type: textarea
+    id: existing
+    attributes:
+      label: How this is solved elsewhere
+      description: >
+        CoderPad, HackerRank, Codility, or any editor with live collaboration.
+        Include the current workaround, if there is one. Knowing what people do
+        today says how urgent this is.
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed design
+      value: |
+        ### Overview
+
+        ### Protocol changes
+        <!-- New or changed frame types. For each: what it carries, which role
+             may send it, and whether it is room state. Anything the hub keeps
+             must also appear in a late joiner's snapshot. -->
+
+        ### Schema changes
+        <!-- New tables or columns, and the migration. Migrations are one-way:
+             one that has run in production can only be followed, not edited. -->
+
+        ### API surface
+        <!-- New or changed REST routes, and what authorizes each. -->
+
+        ### Out of scope
+        <!-- What this deliberately does not cover. -->
+    validations:
+      required: true
+
+  - type: textarea
+    id: concurrency
+    attributes:
+      label: Effect on the hub
+      description: >
+        Required if this touches `internal/ws`, and worth a line either way.
+      value: |
+        - Does any state become shared between goroutines? If so, which
+          goroutine owns it?
+        - Does this add a second message that must arrive with a join? Two sends
+          into the same `select` have no defined order — that has already caused
+          one race here, and the fix was to carry the value on the `Client`.
+        - What test pins the new behaviour?
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including doing nothing.
+      placeholder: |
+        | Approach | Trade-off | Why not |
+        |----------|-----------|---------|
+        |          |           |         |
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and what could go wrong
+      description: >
+        Especially anything that fails *only in a browser*. A blocked stylesheet
+        once made Monaco look like a stuck cursor while `tsc`, eslint, the Next
+        build and CI were all green — so "how would we notice this broke" is a
+        real question here.
+    validations:
+      required: false
+
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions
+      placeholder: |
+        - [ ]
+    validations:
+      required: false
+
+  - type: textarea
+    id: plan
+    attributes:
+      label: Implementation plan
+      description: >
+        The issues this becomes, roughly in order, and which milestone they
+        belong to. Note anything that has to land first.
+    validations:
+      required: true

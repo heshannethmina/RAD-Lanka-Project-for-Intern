@@ -46,18 +46,23 @@ It is designed for startups, hiring teams, and university placement programmes t
 
 ## Contributing
 
-Contributions, bug reports, and product ideas are welcome.
+Contributions, bug reports, and product ideas are welcome. **[CONTRIBUTING.md](CONTRIBUTING.md)** has the full guide: how to get both halves running locally, the two checks that skip themselves silently, and what review expects.
 
-1. Check existing issues or open one to discuss a substantial change.
-2. Fork the repository and create a focused branch.
-3. Keep each pull request small, clear, and accompanied by relevant tests.
-4. Describe the user-facing impact in the pull request and link the related issue when there is one.
+The short version:
 
-Before opening a pull request, please make sure the relevant frontend or backend checks pass. The automated CI workflow will validate both parts of the project again.
+1. Search the [issues](https://github.com/heshannethmina/SyncR/issues) first. Anything tagged `good first issue` is genuinely self-contained.
+2. Ask in [Discussions](https://github.com/heshannethmina/SyncR/discussions) rather than filing an issue if you are not yet sure it is one. Anything that changes the WebSocket protocol, the schema or the concurrency design should start as a **design proposal** there.
+3. One branch per change, branched from `main`. Branches are deleted on merge, so do not keep one around.
+4. Pull request titles are conventional commits (`fix: stop the caret jumping`) — squash merging makes the title the commit message on `main`, and a workflow checks it.
+5. Link the issue with `Closes #123` in the description. Closing keywords only fire at merge time.
+
+[`CLAUDE.md`](CLAUDE.md) is the design record — why one goroutine owns each document, why tokens are not JWTs, why Python runs in the browser. Read the relevant part before proposing a change to any of it; several of those choices look like accidents and are not.
 
 ## Community
 
-If you would like to help, a great place to start is improving the interface, documentation, accessibility, tests, or interview workflows. Please be kind, specific, and collaborative in issues and pull requests.
+A good place to start is the interface, documentation, accessibility, tests, or the interview workflow itself. Please be kind, specific, and collaborative — see the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Security problems go to a [private advisory](https://github.com/heshannethmina/SyncR/security/advisories/new), never a public issue. The [security policy](.github/SECURITY.md) explains what is in scope and what is deliberately not.
 
 ---
 

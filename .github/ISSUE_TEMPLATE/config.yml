@@ -3,6 +3,8 @@
 # more than a well-shaped one that never got filed.
 blank_issues_enabled: true
 
+# These appear on the new-issue page, so they are the last chance to divert
+# something that does not belong in the issue tracker before it is filed there.
 contact_links:
   - name: Security vulnerability
     url: https://github.com/heshannethmina/SyncR/security/advisories/new
@@ -10,6 +12,22 @@ contact_links:
       Please do not open a public issue. SyncR runs code a stranger typed and
       guards an interview with bearer tokens, so report it privately here and
       it can be fixed before it is described in public.
+  - name: Question — how do I, why does it
+    url: https://github.com/heshannethmina/SyncR/discussions/categories/q-a
+    about: >
+      Ask in Q&A rather than filing an issue. An issue should have an answer
+      to "how would we know this is done"; a question does not yet.
+  - name: Half-formed idea
+    url: https://github.com/heshannethmina/SyncR/discussions/categories/ideas
+    about: >
+      Somewhere to think out loud before it is scoped. Ideas that survive
+      become feature issues, or design proposals if they need agreement first.
+  - name: Design proposal
+    url: https://github.com/heshannethmina/SyncR/discussions/categories/design-proposals
+    about: >
+      For anything changing the WebSocket protocol, the schema, the
+      authorization model or the concurrency design. Writing it down beats
+      finding out in review that the approach was wrong.
   - name: Why is it built this way
     url: https://github.com/heshannethmina/SyncR/blob/main/CLAUDE.md
     about: >
