@@ -15,6 +15,11 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    # Conventional-commit prefix, so these pass the PR title check in
+    # .github/workflows/pr-title.yml. Dependabot titles its pull
+    # requests "Bump x from y to z" by default, which does not.
+    commit-message:
+      prefix: chore
     open-pull-requests-limit: 5
     groups:
       go-dependencies:
@@ -24,6 +29,11 @@ updates:
     directory: /web
     schedule:
       interval: weekly
+    # Conventional-commit prefix, so these pass the PR title check in
+    # .github/workflows/pr-title.yml. Dependabot titles its pull
+    # requests "Bump x from y to z" by default, which does not.
+    commit-message:
+      prefix: chore
     open-pull-requests-limit: 5
     groups:
       # Next, React and their types move together; splitting them produces
@@ -40,6 +50,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Conventional-commit prefix, so these pass the PR title check in
+    # .github/workflows/pr-title.yml. Dependabot titles its pull
+    # requests "Bump x from y to z" by default, which does not.
+    commit-message:
+      prefix: chore
     groups:
       actions:
         patterns: ["*"]

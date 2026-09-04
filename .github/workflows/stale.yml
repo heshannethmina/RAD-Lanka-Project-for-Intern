@@ -1,0 +1,66 @@
+# The stale bot — closes what has genuinely been abandoned, and nothing else.
+#
+# A backlog nobody prunes stops being a backlog: after a year of "open, no
+# comment since March" it is impossible to tell what is still wanted from what
+# was an idea somebody had once. This marks the quiet ones and closes them if
+# they stay quiet, which keeps the open list something a person can actually
+# read top to bottom.
+#
+# The exemptions are the important half of the config. A bot that closes real
+# work because nobody happened to comment on it is worse than no bot at all,
+# so anything deliberately parked, anything on a milestone, and anything
+# labelled as security or a pinned decision is left alone forever.
+
+name: Stale
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  # Manually runnable, so the effect of a config change can be seen without
+  # waiting a day for the cron.
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          days-before-issue-stale: 90
+          days-before-issue-close: 21
+          stale-issue-label: stale
+          stale-issue-message: >
+            This has had no activity for 90 days, so it is being marked stale.
+            If it is still wanted, say so — a comment, or any label change,
+            clears this. Otherwise it will close in 21 days. Closing is not a
+            judgement on the idea; a closed issue can be reopened.
+
+          # Pull requests get a shorter fuse than issues. An idea can sit for
+          # a quarter and still be a good idea; a branch that has not moved in
+          # a month has usually been superseded by main.
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-pr-label: stale
+          stale-pr-message: >
+            No activity for 30 days. If this is still in progress, push
+            something or leave a comment and the label clears. Otherwise it
+            will close in 14 days — the branch is not deleted, so reopening
+            costs nothing.
+
+          # Never touched, whatever happens.
+          exempt-issue-labels: "security,roadmap,pinned,help wanted,good first issue"
+          exempt-pr-labels: "security,pinned"
+          # Anything on a milestone has been scheduled by a human. That
+          # decision outranks a timer.
+          exempt-all-milestones: true
+          # Dependabot's own pull requests are handled by Dependabot.
+          exempt-pr-author: dependabot[bot]
+
+          # Ascending, so the oldest — the ones this exists for — are
+          # processed first if the API budget runs out mid-run.
+          ascending: true
+          operations-per-run: 60

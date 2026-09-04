@@ -1,0 +1,18 @@
+# Blank issues stay enabled. A template that does not fit is a reason to
+# abandon a report, and a badly-shaped issue about a real bug is worth much
+# more than a well-shaped one that never got filed.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/heshannethmina/SyncR/security/advisories/new
+    about: >
+      Please do not open a public issue. SyncR runs code a stranger typed and
+      guards an interview with bearer tokens, so report it privately here and
+      it can be fixed before it is described in public.
+  - name: Why is it built this way
+    url: https://github.com/heshannethmina/SyncR/blob/main/CLAUDE.md
+    about: >
+      Much of the reasoning is already written down: why one goroutine owns
+      each document, why tokens are not JWTs, why Python runs in the browser.
+      Worth a read before proposing a change to any of it.

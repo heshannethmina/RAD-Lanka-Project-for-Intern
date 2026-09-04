@@ -1,0 +1,52 @@
+# Checks that a pull request title is a conventional commit.
+#
+# Squash merging is enabled and the squash message defaults to the pull
+# request title, so on any branch with more than one commit the title *is*
+# what lands on main. That makes it the one place the convention can be
+# enforced — a tidy branch history disappears at squash time.
+#
+# This fails the check rather than rewriting the title. A bot editing somebody
+# else's words is worse than telling them what to change.
+
+name: PR title
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            revert
+          # Optional, and left free-form rather than pinned to a list. A
+          # scope allowlist has to be edited every time a package is added,
+          # and gets stale rather than enforced.
+          requireScope: false
+          # "fix: Handle empty snapshot" reads the same as the lowercase
+          # form and rejecting it teaches nothing.
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" should start lowercase — "{type}: handle …",
+            not "{type}: Handle …".
